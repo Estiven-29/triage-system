@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, User, Heart, Thermometer, Wind, Droplet } from 'lucide-react';
 
-const PatientIntake = () => {
+const PatientIntake = ({ onGoToDashboard }) => {
   const [step, setStep] = useState(1);
   const [sessionId, setSessionId] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -451,7 +451,7 @@ const PatientIntake = () => {
                 Nuevo Paciente
               </button>
               <button
-                onClick={() => { window.location.href = '/dashboard'; }}
+                onClick={onGoToDashboard}
                 className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700"
               >
                 Ver Dashboard

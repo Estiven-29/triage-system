@@ -1,151 +1,121 @@
-# Sistema de Triaje Inteligente (FastAPI + React)
+# Sistema de Triage Inteligente (FastAPI + React)
 
-Plataforma para la clasificación de pacientes en urgencias combinando modelos de Machine Learning, cálculo TISS-28 y una interfaz moderna en React. Incluye API REST, WebSocket para interacción en tiempo real, scripts de entrenamiento de modelos y preparación de datos.
+Proyecto educativo/portafolio: plataforma de apoyo a la clasificación de
+pacientes en un servicio de urgencias. **No es un dispositivo médico ni
+debe usarse para decisiones clínicas reales.**
 
-## Tabla de contenidos
-- Descripción general
-- Características
-- Arquitectura
-- Requisitos
-- Estructura del proyecto
-- Puesta en marcha en PC local (Windows)
-- Scripts de Machine Learning
-- API y documentación
-- Pruebas
-- Buenas prácticas y seguridad
-- Problemas comunes
+Flujo: se registra un paciente, un chatbot de intake (basado en reglas)
+recoge el motivo de consulta y los síntomas, se capturan los signos
+vitales, y un modelo de Machine Learning (Random Forest, entrenado sobre
+datos sintéticos) clasifica el caso como `CRITICO` / `URGENTE` / `NORMAL`,
+con un índice de complejidad inspirado en TISS-28, diagnósticos
+preliminares sugeridos por reglas y acciones recomendadas. El dashboard
+muestra los pacientes ya clasificados con datos reales (no simulados).
 
-## Descripción general
-Este sistema ayuda a priorizar pacientes en un servicio de urgencias mediante:
-- Clasificación automática basada en ML (scikit-learn / XGBoost / LightGBM).
-- Cálculo del índice **TISS-28** para estimar carga de cuidados.
-- Integración con FHIR para interoperabilidad clínica.
-- Panel de control en React para visualización, ingreso de pacientes y seguimiento.
+## Qué es real y qué es una simplificación (léelo antes de usar el proyecto)
 
-## Características
-- API en **FastAPI** (rápida y tipada) con CORS configurado para el frontend.
-- Modelos de datos con **Pydantic** y persistencia con **SQLAlchemy**.
-- Scripts para **preparación de datos**, **entrenamiento** y **evaluación** de modelos.
-- Dashboard en **React** (Create React App) y gráficos con **Recharts**.
-- Documentación automática Swagger en `http://localhost:8000/docs`.
+| Componente | Estado |
+|---|---|
+| Clasificación ML | **Real**: Random Forest entrenado y evaluado con `scikit-learn` (~91% accuracy, ~91% recall en CRÍTICO sobre el conjunto de evaluación sintético). |
+| Dataset de entrenamiento | **Sintético**: no existe un dataset clínico real disponible (por privacidad de datos de salud). Se genera con una heurística basada en una versión simplificada del NEWS2 (National Early Warning Score) + ruido de etiqueta. Ver `backend/app/ml/train.py`. |
+| Chatbot de intake | **Basado en reglas** (extracción de síntomas por palabras clave + maquina de estados de 2 turnos), no un LLM generativo. |
+| Índice "TISS-28" | **Aproximación**, no la escala clínica real (que requiere un checklist de 28 intervenciones de enfermería, dato que esta app no captura). Ver el docstring de `backend/app/services/complexity.py`. |
+| Diagnósticos preliminares | **Heurística por palabras clave**, no un modelo de diagnóstico entrenado. |
+| Dashboard (Vista General) | **Real**, calculado desde la base de datos con los pacientes efectivamente clasificados. |
+| Dashboard (Carga de Trabajo TISS-28, Analítica) | **Parcialmente ilustrativo** — la asignación de personal y la tendencia horaria son datos de ejemplo (se indica en la UI); el radar de "Rendimiento del Modelo ML" sí usa métricas reales. |
 
 ## Arquitectura
-- **Frontend**: React (CRA), Tailwind (configurado), servicios Axios.
-- **Backend**: FastAPI, Pydantic, SQLAlchemy, Uvicorn, integración FHIR.
-- **Base de datos**: PostgreSQL (recomendado), se puede usar SQLite para desarrollo rápido.
-- **ML**: scikit-learn, XGBoost, LightGBM; seguimiento opcional con MLflow.
 
-## Requisitos
-- **Windows 10/11**.
-- **Node.js** `>= 18` y **npm** `>= 9`.
-- **Python** `>= 3.10` (recomendado `3.12`).
-- **PostgreSQL** `>= 14` (o SQLite para pruebas).
+- **Backend**: FastAPI + SQLAlchemy (SQLite por defecto, Postgres opcional) + scikit-learn.
+- **Frontend**: React 18 (Create React App + CRACO) + Tailwind CSS + Recharts.
+- **Comunicación en tiempo real**: WebSocket (`/ws/triage`) para refrescar el dashboard cuando se clasifica un paciente nuevo.
 
-## Estructura del proyecto
 ```
 triage-system/
 ├── backend/
-│   ├── init_db.py              # utilidades de inicialización de BD
-│   └── ...                     # (código de API FastAPI)
+│   ├── app/
+│   │   ├── api/          # endpoints (chatbot, triage, dashboard, websocket)
+│   │   ├── services/     # chatbot, complejidad, sugerencias de diagnóstico
+│   │   ├── ml/           # generación de datos sintéticos, entrenamiento, inferencia
+│   │   ├── models/       # modelos SQLAlchemy
+│   │   ├── schemas/      # esquemas Pydantic
+│   │   └── main.py
+│   ├── tests/            # pytest
+│   ├── requirements.txt
+│   └── Dockerfile
 ├── frontend/
-│   ├── src/                    # componentes y servicios de React
-│   └── ...
-└── ml-training/
-    ├── data_preparation.py     # limpieza y feature engineering
-    ├── train_model.py          # entrenamiento y persistencia de modelos
-    └── evaluate_model.py       # métricas y evaluación
+│   └── src/
+│       ├── components/   # PatientIntake, TriageDashboard
+│       └── services/     # cliente HTTP + WebSocket
+├── ml-training/          # scripts CLI (usan la misma lógica que el backend)
+└── docker-compose.yml    # backend + Postgres
 ```
 
-> Nota: Si tu código de backend está dentro de `backend/venv/app`, se recomienda **moverlo** a `backend/app` para evitar confusiones (los entornos virtuales no deben contener código fuente). Asegúrate de ajustar la ruta de ejecución de Uvicorn según corresponda.
+## Puesta en marcha local
 
-## Puesta en marcha en PC local (Windows)
+### Backend
 
-### 1) Clonar el repositorio
-
-```powershell
-# Si aún no lo has clonado (usa tu URL)
-git clone https://github.com/Estiven-29/triage-system.git
-cd triage-system
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # Linux/Mac
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
 ```
 
-### 2) Backend (FastAPI)
+No hace falta ejecutar nada más: si no existe un modelo entrenado, el
+backend lo entrena automáticamente en el primer arranque (unos segundos)
+y crea la base de datos SQLite (`triage.db`) en `backend/`.
 
-1. Crear entorno virtual (recomendado dentro de `backend/.venv`):
-   ```powershell
-   cd backend
-   py -3.12 -m venv .venv   # o: python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
+Documentación interactiva: http://localhost:8000/docs
 
-2. Instalar dependencias:
-   - Si tienes `backend/requirements.txt`:
-     ```powershell
-     pip install -r requirements.txt
-     ```
-   - En su defecto, instala paquetes comunes manualmente (ejemplo mínimo):
-     ```powershell
-     pip install fastapi uvicorn[standard] sqlalchemy pydantic python-dotenv requests psycopg2-binary
-     pip install scikit-learn xgboost lightgbm pandas numpy
-     ```
+### Frontend
 
-3. Configurar variables de entorno (`backend/.env`):
-   ```dotenv
-   DATABASE_URL=postgresql://usuario:password@localhost:5432/triage_db
-   FRONTEND_URL=http://localhost:3000
-   ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-   SECRET_KEY=una_clave_segura
-   FHIR_BASE_URL=https://servidor-fhir-ejemplo
-   ```
-
-4. Inicializar la base de datos (opcional):
-   ```powershell
-   python init_db.py
-   ```
-
-5. Ejecutar el servidor (ajusta el módulo según tu estructura):
-   ```powershell
-   # Si tu app está en backend/app/main.py
-   uvicorn app.main:app --reload --port 8000
-   
-   # Si aún está en backend/venv/app/main.py (no recomendado)
-   uvicorn app.main:app --reload --port 8000 --app-dir ./venv/app
-   ```
-
-### 3) Frontend (React)
-
-1. Instalar dependencias y arrancar:
-   ```powershell
-   cd ../frontend
-   npm install
-   npm start
-   ```
-
-2. Acceder a la UI:
-   - `http://localhost:3000`
-   - El `package.json` ya tiene `proxy: "http://localhost:8000"`, por lo que las llamadas al backend funcionan sin configurar CORS adicionales.
-
-### 4) Scripts de Machine Learning
-
-Ejecuta desde la raíz o carpeta `ml-training` (activa el entorno si dependes de paquetes ML):
-
-```powershell
-# Preparación de datos
-python ml-training/data_preparation.py
-
-# Entrenamiento
-python ml-training/train_model.py
-
-# Evaluación
-python ml-training/evaluate_model.py
+```bash
+cd frontend
+npm install
+npm start
 ```
 
-Los artefactos de modelos deben guardarse en una carpeta dedicada (por ejemplo, `ml-training/models/`) y no se recomienda versionarlos si son pesados.
+Abre http://localhost:3000. El backend debe estar corriendo en el puerto 8000
+(o define `REACT_APP_API_URL` en un `.env` si usas otro puerto/host).
 
-## API y documentación
-- Swagger/OpenAPI: `http://localhost:8000/docs`
-- Redoc: `http://localhost:8000/redoc`
-- Endpoints típicos (pueden variar según tu implementación):
-  - `POST /triage/assess` – Clasifica el nivel de triage de un paciente.
-  - `POST /tiss28/calc` – Calcula el puntaje TISS-28.
-  - `GET /patients` – Lista de pacientes.
-  - `WebSocket /ws` – Canal para eventos en tiempo real.
+### Con Docker (backend + Postgres)
+
+```bash
+docker compose up --build
+```
+
+## Scripts de Machine Learning
+
+```bash
+cd backend && .venv\Scripts\activate
+python ../ml-training/data_preparation.py   # genera el dataset sintético (CSV)
+python ../ml-training/train_model.py        # entrena y guarda el modelo
+python ../ml-training/evaluate_model.py     # evalúa con un conjunto nuevo (semilla distinta)
+```
+
+## Pruebas
+
+```bash
+cd backend && .venv\Scripts\activate
+pytest -v
+```
+
+Cubre: el índice de complejidad, el chatbot (extracción de síntomas y flujo
+de 2 turnos), el clasificador ML, y un test de integración end-to-end sobre
+la API (intake → chatbot → clasificación → dashboard).
+
+## Endpoints principales
+
+- `POST /api/chatbot/start` — inicia la sesión de intake
+- `POST /api/chatbot/message` — envía un mensaje al chatbot
+- `POST /api/triage/classify` — clasifica al paciente con los signos vitales
+- `GET /api/dashboard/metrics` — métricas agregadas de los últimos casos
+- `GET /api/dashboard/active-patients` — lista de pacientes recientes
+- `WS /ws/triage` — notifica cuando se clasifica un paciente nuevo
+
+## Variables de entorno (backend)
+
+Ver `backend/.env.example`. Por defecto usa SQLite y no requiere configuración.

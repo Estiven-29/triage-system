@@ -54,23 +54,23 @@ function App() {
           <div className="mt-12 pt-8 border-t border-gray-200">
             <div className="grid grid-cols-3 gap-8 text-center">
               <div>
-                <p className="text-3xl font-bold text-blue-600">87%</p>
-                <p className="text-sm text-gray-600">Precisión ML</p>
+                <p className="text-3xl font-bold text-blue-600">91%</p>
+                <p className="text-sm text-gray-600">Precisión del modelo (datos sintéticos)</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-green-600">-40%</p>
-                <p className="text-sm text-gray-600">Tiempo de Espera</p>
+                <p className="text-3xl font-bold text-green-600">&lt;1s</p>
+                <p className="text-sm text-gray-600">Tiempo de clasificación</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-purple-600">24/7</p>
-                <p className="text-sm text-gray-600">Disponibilidad</p>
+                <p className="text-3xl font-bold text-purple-600">3</p>
+                <p className="text-sm text-gray-600">Niveles de triage</p>
               </div>
             </div>
           </div>
 
           <div className="mt-8">
             <p className="text-sm text-gray-500">
-              🔒 Sistema seguro y compatible con FHIR | 🤖 Powered by Machine Learning
+              🤖 Clasificacion asistida por Machine Learning | 📋 Proyecto educativo, no un dispositivo medico
             </p>
           </div>
         </div>
@@ -89,7 +89,7 @@ function App() {
           >
             ← Volver al inicio
           </button>
-          <PatientIntake />
+          <PatientIntake onGoToDashboard={() => setCurrentView('dashboard')} />
         </div>
       )}
       {currentView === 'dashboard' && (

@@ -5,6 +5,11 @@ Script para inicializar la base de datos con tablas y datos de prueba
 import sys
 import os
 
+# Evita UnicodeEncodeError con los emojis de este script en consolas Windows
+# cuya codepage por defecto no es UTF-8 (cp1252).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # Agregar el directorio raíz al path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -108,28 +113,33 @@ if __name__ == "__main__":
     print("INICIALIZANDO BASE DE DATOS DEL SISTEMA DE TRIAGE")
     print("="*60)
     
-    # Verificar conexión a la base de datos
-    print("\n🔌 Verificando conexión a PostgreSQL...")
+    # Verificar conexion a la base de datos
+    is_postgres = engine.url.get_backend_name() == "postgresql"
+    print(f"\n🔌 Verificando conexión a la base de datos ({engine.url.get_backend_name()})...")
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT version()"))
-            version = result.fetchone()[0]
-            print(f"✓ Conectado a PostgreSQL")
-            print(f"  Versión: {version.split(',')[0]}")
+            if is_postgres:
+                version = conn.execute(text("SELECT version()")).fetchone()[0]
+                print("✓ Conectado a PostgreSQL")
+                print(f"  Versión: {version.split(',')[0]}")
+            else:
+                conn.execute(text("SELECT 1"))
+                print("✓ Conectado (SQLite, cero configuración)")
     except Exception as e:
         print(f"✗ Error de conexión: {e}")
-        print("\n💡 Soluciones:")
-        print("1. Verifica que PostgreSQL esté ejecutándose:")
-        print("   - Windows: Servicios → PostgreSQL")
-        print("   - Docker: docker ps")
-        print("\n2. Verifica las credenciales en el archivo .env")
-        print("   DATABASE_URL=postgresql://usuario:password@localhost:5432/triage_db")
-        print("\n3. Crea la base de datos si no existe:")
-        print("   psql -U postgres")
-        print("   CREATE DATABASE triage_db;")
-        print("   CREATE USER triage_user WITH PASSWORD 'triage_password';")
-        print("   GRANT ALL PRIVILEGES ON DATABASE triage_db TO triage_user;")
+        if is_postgres:
+            print("\n💡 Soluciones:")
+            print("1. Verifica que PostgreSQL esté ejecutándose:")
+            print("   - Windows: Servicios → PostgreSQL")
+            print("   - Docker: docker ps")
+            print("\n2. Verifica las credenciales en el archivo .env")
+            print("   DATABASE_URL=postgresql://usuario:password@localhost:5432/triage_db")
+            print("\n3. Crea la base de datos si no existe:")
+            print("   psql -U postgres")
+            print("   CREATE DATABASE triage_db;")
+            print("   CREATE USER triage_user WITH PASSWORD 'triage_password';")
+            print("   GRANT ALL PRIVILEGES ON DATABASE triage_db TO triage_user;")
         sys.exit(1)
     
     # Inicializar tablas

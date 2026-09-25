@@ -1,12 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { Activity, Users, Clock, AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react';
+import { getDashboardMetrics, getActivePatients, connectWebSocket } from '../services/api';
+
+// Carga de personal: el backend no modela asignacion/turnos de personal,
+// asi que esta seccion se mantiene como dato ilustrativo (se indica en la UI).
+const ILLUSTRATIVE_STAFF_WORKLOAD = [
+  { name: 'Dr. García', role: 'Cardiólogo', tiss28Load: 60, capacity: 70, patients: 2, ratio: '1:1', available: true },
+  { name: 'Dra. Martínez', role: 'Urgencias', tiss28Load: 53, capacity: 60, patients: 2, ratio: '1:2', available: true },
+  { name: 'Dr. López', role: 'Urgencias', tiss28Load: 28, capacity: 50, patients: 1, ratio: '1:3', available: true },
+  { name: 'Dra. Fernández', role: 'Cirugía', tiss28Load: 15, capacity: 50, patients: 0, ratio: '0:0', available: true }
+];
 
 const TriageDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [realTimeData, setRealTimeData] = useState({
     activePatients: [],
-    staffWorkload: [],
+    staffWorkload: ILLUSTRATIVE_STAFF_WORKLOAD,
     systemMetrics: {
       totalPatients: 0,
       critical: 0,
@@ -18,54 +28,42 @@ const TriageDashboard = () => {
     },
     tiss28Distribution: []
   });
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    const mockData = {
-      activePatients: [
-        { id: 1, name: 'Juan Pérez', age: 56, category: 'CRITICO', riskScore: 89, tiss28: 18, waitTime: 0, assignedTo: 'Dr. García', complaint: 'Dolor torácico con disnea' },
-        { id: 2, name: 'María López', age: 34, category: 'URGENTE', riskScore: 72, tiss28: 25, waitTime: 15, assignedTo: 'Dra. Martínez', complaint: 'Fractura de tobillo' },
-        { id: 3, name: 'Carlos Ruiz', age: 67, category: 'CRITICO', riskScore: 91, tiss28: 42, waitTime: 5, assignedTo: 'Dr. García', complaint: 'Posible ACV' },
-        { id: 4, name: 'Ana Torres', age: 28, category: 'URGENTE', riskScore: 65, tiss28: 14, waitTime: 22, assignedTo: 'Dr. López', complaint: 'Dolor abdominal agudo' },
-        { id: 5, name: 'Pedro Sánchez', age: 45, category: 'NORMAL', riskScore: 38, tiss28: 8, waitTime: 45, assignedTo: 'Dra. Martínez', complaint: 'Fiebre leve' }
-      ],
-      staffWorkload: [
-        { name: 'Dr. García', role: 'Cardiólogo', tiss28Load: 60, capacity: 70, patients: 2, ratio: '1:1', available: true },
-        { name: 'Dra. Martínez', role: 'Urgencias', tiss28Load: 53, capacity: 60, patients: 2, ratio: '1:2', available: true },
-        { name: 'Dr. López', role: 'Urgencias', tiss28Load: 28, capacity: 50, patients: 1, ratio: '1:3', available: true },
-        { name: 'Dra. Fernández', role: 'Cirugía', tiss28Load: 15, capacity: 50, patients: 0, ratio: '0:0', available: true }
-      ],
-      systemMetrics: {
-        totalPatients: 5,
-        critical: 2,
-        urgent: 2,
-        normal: 1,
-        avgWaitTime: 17.4,
-        mlConfidence: 84.2,
-        avgTiss28: 21.4
-      },
-      tiss28Distribution: [
-        { range: '0-10', count: 1, complexity: 'Baja' },
-        { range: '11-20', count: 2, complexity: 'Moderada' },
-        { range: '21-30', count: 1, complexity: 'Alta' },
-        { range: '31-40', count: 0, complexity: 'Muy Alta' },
-        { range: '41+', count: 1, complexity: 'Crítica' }
-      ]
-    };
-
-    setRealTimeData(mockData);
-
-    const interval = setInterval(() => {
+  const refresh = useCallback(async () => {
+    try {
+      const [metrics, activePatients] = await Promise.all([
+        getDashboardMetrics(),
+        getActivePatients(),
+      ]);
       setRealTimeData(prev => ({
         ...prev,
-        activePatients: prev.activePatients.map(p => ({
-          ...p,
-          waitTime: p.waitTime + 1
-        }))
+        systemMetrics: metrics.systemMetrics,
+        tiss28Distribution: metrics.tiss28Distribution,
+        activePatients,
       }));
-    }, 5000);
-
-    return () => clearInterval(interval);
+      setLoadError(false);
+    } catch (error) {
+      console.error('Error cargando datos del dashboard:', error);
+      setLoadError(true);
+    }
   }, []);
+
+  useEffect(() => {
+    refresh();
+
+    // Polling como respaldo cada 8s, mas un refresco inmediato cuando el
+    // WebSocket avisa que se clasifico un paciente nuevo.
+    const interval = setInterval(refresh, 8000);
+    const ws = connectWebSocket((event) => {
+      if (event.type === 'new_patient') refresh();
+    });
+
+    return () => {
+      clearInterval(interval);
+      ws.close();
+    };
+  }, [refresh]);
 
   const categoryColors = {
     'CRITICO': '#ef4444',
@@ -92,7 +90,7 @@ const TriageDashboard = () => {
       <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="font-bold text-lg">{patient.name}</h3>
-          <p className="text-gray-600 text-sm">{patient.age} años | {patient.complaint}</p>
+          <p className="text-gray-600 text-sm">{patient.age ? `${patient.age} años | ` : ''}{patient.complaint || 'Sin motivo registrado'}</p>
         </div>
         <span className="px-3 py-1 rounded-full text-xs font-semibold text-white"
               style={{ backgroundColor: categoryColors[patient.category] }}>
@@ -174,6 +172,15 @@ const TriageDashboard = () => {
 
     return (
       <div className="space-y-6">
+        {loadError && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-4 flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
+            <p className="text-sm text-red-700">
+              No se pudo conectar con el backend ({process.env.REACT_APP_API_URL || 'http://localhost:8000'}).
+              Verifica que este corriendo.
+            </p>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             icon={Users}
@@ -245,17 +252,27 @@ const TriageDashboard = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-bold">Pacientes en Espera</h3>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm">
+            <button
+              onClick={refresh}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
+            >
               Actualizar
             </button>
           </div>
-          <div className="space-y-3">
-            {realTimeData.activePatients
-              .sort((a, b) => a.category === 'CRITICO' ? -1 : b.category === 'CRITICO' ? 1 : a.waitTime - b.waitTime)
-              .map(patient => (
-                <PatientCard key={patient.id} patient={patient} />
-              ))}
-          </div>
+          {realTimeData.activePatients.length === 0 ? (
+            <p className="text-gray-500 text-sm py-6 text-center">
+              No hay pacientes clasificados todavía. Ve a "Nuevo Paciente" para registrar uno.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {realTimeData.activePatients
+                .slice()
+                .sort((a, b) => a.category === 'CRITICO' ? -1 : b.category === 'CRITICO' ? 1 : a.waitTime - b.waitTime)
+                .map(patient => (
+                  <PatientCard key={patient.id} patient={patient} />
+                ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -264,8 +281,11 @@ const TriageDashboard = () => {
   const WorkloadTab = () => (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold mb-4">Carga de Trabajo del Personal (TISS-28)</h3>
-        
+        <h3 className="text-lg font-bold mb-1">Carga de Trabajo del Personal (TISS-28)</h3>
+        <p className="text-xs text-gray-400 mb-4">
+          Datos de ejemplo con fines ilustrativos: el backend aun no gestiona asignacion de personal.
+        </p>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div>
             <h4 className="font-semibold mb-3 text-gray-700">Personal Médico</h4>
@@ -361,16 +381,28 @@ const TriageDashboard = () => {
       { time: '20:00', pacientes: 5, tiss28Avg: 19, mlConfidence: 86 }
     ];
 
+    // Metricas reales, medidas con ml-training/evaluate_model.py sobre un
+    // conjunto sintetico de evaluacion (semilla distinta a la de entrenamiento).
     const modelPerformance = [
-      { categoria: 'Precisión', actual: 87, objetivo: 80 },
-      { categoria: 'Recall Crítico', actual: 92, objetivo: 90 },
-      { categoria: 'Recall Urgente', actual: 85, objetivo: 80 },
-      { categoria: 'Confianza', actual: 84, objetivo: 70 },
-      { categoria: 'Cohen Kappa', actual: 72, objetivo: 65 }
+      { categoria: 'Precisión', actual: 91, objetivo: 80 },
+      { categoria: 'Recall Crítico', actual: 91, objetivo: 90 },
+      { categoria: 'Recall Urgente', actual: 84, objetivo: 80 },
+      { categoria: 'Confianza', actual: 71, objetivo: 70 },
+      { categoria: 'Cohen Kappa', actual: 79, objetivo: 65 }
     ];
 
     return (
       <div className="space-y-6">
+        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 flex items-center">
+          <AlertCircle className="w-5 h-5 text-amber-600 mr-2 flex-shrink-0" />
+          <p className="text-sm text-amber-800">
+            La tendencia horaria, la matriz de confusión y las tarjetas de impacto de esta
+            pestaña son datos de ejemplo ilustrativos (no hay aún seguimiento histórico real).
+            El radar de "Rendimiento del Modelo ML" sí usa métricas reales, medidas con
+            <code className="mx-1 bg-amber-100 px-1 rounded">ml-training/evaluate_model.py</code>
+            sobre un conjunto sintético de evaluación.
+          </p>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-bold mb-4">Tendencia de Pacientes (24h)</h3>
