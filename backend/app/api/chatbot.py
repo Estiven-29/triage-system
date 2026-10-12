@@ -20,7 +20,9 @@ def start_chat(patient_data: PatientIntakeData, db: Session = Depends(get_db)):
     patient = Patient(
         first_name=patient_data.first_name,
         last_name=patient_data.last_name,
-        date_of_birth=patient_data.date_of_birth,
+        date_of_birth=(
+            patient_data.date_of_birth.isoformat() if patient_data.date_of_birth else None
+        ),
         gender=patient_data.gender,
     )
     db.add(patient)

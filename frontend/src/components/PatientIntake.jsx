@@ -7,12 +7,13 @@ import {
   getErrorMessage,
 } from '../services/api';
 
+// Mantener sincronizado con VitalSigns en backend/app/schemas/schemas.py.
 const VITAL_SIGN_LIMITS = {
-  heart_rate: { label: 'Frecuencia cardíaca', min: 0, max: 300, integer: true },
-  respiratory_rate: { label: 'Frecuencia respiratoria', min: 0, max: 100, integer: true },
-  systolic_bp: { label: 'Presión sistólica', min: 0, max: 300, integer: true },
-  diastolic_bp: { label: 'Presión diastólica', min: 0, max: 200, integer: true },
-  spo2: { label: 'SpO2', min: 0, max: 100, integer: true },
+  heart_rate: { label: 'Frecuencia cardíaca', min: 20, max: 250, integer: true },
+  respiratory_rate: { label: 'Frecuencia respiratoria', min: 4, max: 60, integer: true },
+  systolic_bp: { label: 'Presión sistólica', min: 40, max: 300, integer: true },
+  diastolic_bp: { label: 'Presión diastólica', min: 20, max: 200, integer: true },
+  spo2: { label: 'SpO2', min: 50, max: 100, integer: true },
   temperature: { label: 'Temperatura', min: 25, max: 45, integer: false },
 };
 
@@ -233,6 +234,7 @@ const PatientIntake = ({ onGoToDashboard }) => {
               <input
                 type="text"
                 placeholder="Nombre"
+                maxLength={100}
                 className="border rounded p-2"
                 value={patientData.first_name}
                 onChange={(e) => setPatientData({...patientData, first_name: e.target.value})}
@@ -240,12 +242,14 @@ const PatientIntake = ({ onGoToDashboard }) => {
               <input
                 type="text"
                 placeholder="Apellido"
+                maxLength={100}
                 className="border rounded p-2"
                 value={patientData.last_name}
                 onChange={(e) => setPatientData({...patientData, last_name: e.target.value})}
               />
               <input
                 type="date"
+                max={new Date().toISOString().slice(0, 10)}
                 placeholder="Fecha de Nacimiento"
                 className="border rounded p-2"
                 value={patientData.date_of_birth}
@@ -294,6 +298,7 @@ const PatientIntake = ({ onGoToDashboard }) => {
                 type="text"
                 className="flex-1 border rounded-lg p-3"
                 placeholder="Escriba su respuesta..."
+                maxLength={1000}
                 value={currentMessage}
                 onChange={(e) => setCurrentMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
@@ -411,6 +416,7 @@ const PatientIntake = ({ onGoToDashboard }) => {
                 className="w-full border rounded-lg p-3"
                 rows="3"
                 placeholder="Describa el motivo principal de la consulta..."
+                maxLength={1000}
                 value={chiefComplaint}
                 onChange={(e) => setChiefComplaint(e.target.value)}
               />
