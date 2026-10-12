@@ -67,6 +67,7 @@ def test_full_intake_and_classification_flow():
     body = classify.json()
     assert body["classification"] in {"NORMAL", "URGENTE", "CRITICO"}
     assert 0.0 <= body["confidence"] <= 1.0
+    assert isinstance(body["safety_override"], bool)
     assert body["tiss28_score"] >= 0
     assert isinstance(body["recommended_actions"], list)
 

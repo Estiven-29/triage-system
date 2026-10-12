@@ -1,6 +1,23 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// Misma base que la API REST, cambiando http(s) por ws(s).
+export const WS_URL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/triage`;
+
+// Convierte un error de axios en un mensaje legible para el usuario.
+// FastAPI devuelve `detail` como string (404) o como lista de errores (422).
+export const getErrorMessage = (error, fallback = 'Ocurrió un error inesperado') => {
+  if (!error.response) {
+    return `No se pudo conectar con el backend (${API_BASE_URL}).`;
+  }
+  const { detail } = error.response.data || {};
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((d) => `${d.loc?.slice(-1)[0] ?? ''}: ${d.msg}`).join('; ');
+  }
+  return fallback;
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -71,7 +88,7 @@ export const getActivePatients = async () => {
 // ==================== WEBSOCKET ====================
 
 export const connectWebSocket = (onMessage) => {
-  const ws = new WebSocket(`ws://localhost:8000/ws/triage`);
+  const ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     console.log('WebSocket connected');

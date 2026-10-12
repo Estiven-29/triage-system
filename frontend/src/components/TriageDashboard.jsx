@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { Activity, Users, Clock, AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react';
-import { getDashboardMetrics, getActivePatients, connectWebSocket } from '../services/api';
+import { API_BASE_URL, getDashboardMetrics, getActivePatients, connectWebSocket } from '../services/api';
 
 // Carga de personal: el backend no modela asignacion/turnos de personal,
 // asi que esta seccion se mantiene como dato ilustrativo (se indica en la UI).
@@ -176,7 +176,7 @@ const TriageDashboard = () => {
           <div className="bg-red-50 border-l-4 border-red-400 p-4 flex items-center">
             <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
             <p className="text-sm text-red-700">
-              No se pudo conectar con el backend ({process.env.REACT_APP_API_URL || 'http://localhost:8000'}).
+              No se pudo conectar con el backend ({API_BASE_URL}).
               Verifica que este corriendo.
             </p>
           </div>

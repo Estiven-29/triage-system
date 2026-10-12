@@ -60,6 +60,9 @@ class PreliminaryDiagnosis(BaseModel):
 class TriageClassifyResponse(BaseModel):
     classification: str
     confidence: float
+    # True si la regla de seguridad (alerta roja NEWS2) elevo la
+    # clasificacion del modelo a CRITICO.
+    safety_override: bool = False
     risk_score: int
     tiss28_score: int
     complexity_level: str

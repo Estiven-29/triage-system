@@ -1,5 +1,20 @@
 import React, { useState } from 'react';
-import { Activity, User, Heart, Thermometer, Wind, Droplet } from 'lucide-react';
+import { Activity, User, Heart, Thermometer, Wind, Droplet, AlertTriangle } from 'lucide-react';
+import {
+  startChatbotSession,
+  sendChatbotMessage,
+  classifyPatient as classifyPatientRequest,
+  getErrorMessage,
+} from '../services/api';
+
+const VITAL_SIGN_LIMITS = {
+  heart_rate: { label: 'Frecuencia cardíaca', min: 0, max: 300, integer: true },
+  respiratory_rate: { label: 'Frecuencia respiratoria', min: 0, max: 100, integer: true },
+  systolic_bp: { label: 'Presión sistólica', min: 0, max: 300, integer: true },
+  diastolic_bp: { label: 'Presión diastólica', min: 0, max: 200, integer: true },
+  spo2: { label: 'SpO2', min: 0, max: 100, integer: true },
+  temperature: { label: 'Temperatura', min: 25, max: 45, integer: false },
+};
 
 const PatientIntake = ({ onGoToDashboard }) => {
   const [step, setStep] = useState(1);
@@ -27,43 +42,47 @@ const PatientIntake = ({ onGoToDashboard }) => {
   const [symptoms, setSymptoms] = useState([]);
   const [chiefComplaint, setChiefComplaint] = useState('');
 
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const startChatbot = async () => {
+    if (!patientData.first_name.trim() || !patientData.last_name.trim()) {
+      setErrorMessage('Nombre y apellido son obligatorios.');
+      return;
+    }
+
+    setErrorMessage('');
+    setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:8000/api/chatbot/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patientData),
+      const data = await startChatbotSession({
+        ...patientData,
+        date_of_birth: patientData.date_of_birth || null,
       });
-      const data = await response.json();
-      
       setSessionId(data.session_id);
       setChatMessages([{ sender: 'bot', text: data.message }]);
       setStep(2);
     } catch (error) {
-      console.error('Error starting chatbot:', error);
-      alert('Error al iniciar el chatbot');
+      setErrorMessage(getErrorMessage(error, 'Error al iniciar el chatbot.'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const sendMessage = async () => {
-    if (!currentMessage.trim()) return;
+    const text = currentMessage.trim();
+    if (!text || isSubmitting) return;
 
-    const newMessages = [...chatMessages, { sender: 'user', text: currentMessage }];
+    const newMessages = [...chatMessages, { sender: 'user', text }];
     setChatMessages(newMessages);
+    setCurrentMessage('');
+    setErrorMessage('');
+    setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chatbot/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          message: currentMessage,
-        }),
-      });
-      const data = await response.json();
+      const data = await sendChatbotMessage(sessionId, text);
 
       setChatMessages([...newMessages, { sender: 'bot', text: data.response }]);
-      
+
       if (data.extracted_data) {
         setSymptoms(data.extracted_data.symptoms || []);
         setChiefComplaint(data.extracted_data.chief_complaint || '');
@@ -72,39 +91,63 @@ const PatientIntake = ({ onGoToDashboard }) => {
       if (data.conversation_complete) {
         setStep(3);
       }
-
-      setCurrentMessage('');
     } catch (error) {
-      console.error('Error sending message:', error);
+      // Revertimos el mensaje optimista y lo devolvemos al input para que
+      // el usuario pueda reintentar sin volver a escribirlo.
+      setChatMessages(chatMessages);
+      setCurrentMessage(text);
+      setErrorMessage(getErrorMessage(error, 'Error al enviar el mensaje.'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  // Devuelve [signosVitalesParseados, null] o [null, mensajeDeError].
+  // Los rangos replican la validacion del backend (VitalSigns en schemas.py).
+  const parseVitalSigns = () => {
+    const parsed = {};
+    for (const [field, { label, min, max, integer }] of Object.entries(VITAL_SIGN_LIMITS)) {
+      const raw = String(vitalSigns[field]).trim();
+      const value = Number(raw);
+      if (raw === '' || Number.isNaN(value)) {
+        return [null, `Falta un valor válido para ${label}.`];
+      }
+      if (integer && !Number.isInteger(value)) {
+        return [null, `${label} debe ser un número entero.`];
+      }
+      if (value < min || value > max) {
+        return [null, `${label} debe estar entre ${min} y ${max}.`];
+      }
+      parsed[field] = value;
+    }
+    if (parsed.diastolic_bp >= parsed.systolic_bp) {
+      return [null, 'La presión diastólica debe ser menor que la sistólica.'];
+    }
+    return [parsed, null];
+  };
+
   const classifyPatient = async () => {
+    const [parsedVitals, validationError] = parseVitalSigns();
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setErrorMessage('');
+    setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:8000/api/triage/classify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_id: sessionId,
-          vital_signs: {
-            heart_rate: parseInt(vitalSigns.heart_rate),
-            respiratory_rate: parseInt(vitalSigns.respiratory_rate),
-            systolic_bp: parseInt(vitalSigns.systolic_bp),
-            diastolic_bp: parseInt(vitalSigns.diastolic_bp),
-            spo2: parseInt(vitalSigns.spo2),
-            temperature: parseFloat(vitalSigns.temperature),
-          },
-          chief_complaint: chiefComplaint,
-          symptoms: symptoms,
-        }),
+      const data = await classifyPatientRequest({
+        patient_id: sessionId,
+        vital_signs: parsedVitals,
+        chief_complaint: chiefComplaint,
+        symptoms: symptoms,
       });
-      const data = await response.json();
-      
       setClassificationResult(data);
       setStep(4);
     } catch (error) {
-      console.error('Error classifying patient:', error);
-      alert('Error al clasificar paciente');
+      setErrorMessage(getErrorMessage(error, 'Error al clasificar al paciente.'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -138,6 +181,7 @@ const PatientIntake = ({ onGoToDashboard }) => {
     });
     setSymptoms([]);
     setChiefComplaint('');
+    setErrorMessage('');
   };
 
   return (
@@ -173,6 +217,12 @@ const PatientIntake = ({ onGoToDashboard }) => {
             <span>Resultado</span>
           </div>
         </div>
+
+        {errorMessage && (
+          <div role="alert" className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded">
+            {errorMessage}
+          </div>
+        )}
 
         {step === 1 && (
           <div className="bg-white rounded-lg shadow p-6">
@@ -213,7 +263,8 @@ const PatientIntake = ({ onGoToDashboard }) => {
             </div>
             <button
               onClick={startChatbot}
-              className="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+              disabled={isSubmitting}
+              className="mt-6 w-full disabled:opacity-50 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Iniciar Evaluación →
             </button>
@@ -249,7 +300,8 @@ const PatientIntake = ({ onGoToDashboard }) => {
               />
               <button
                 onClick={sendMessage}
-                className="bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isSubmitting}
+                className="disabled:opacity-50 bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Enviar
               </button>
@@ -366,7 +418,8 @@ const PatientIntake = ({ onGoToDashboard }) => {
 
             <button
               onClick={classifyPatient}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center"
+              disabled={isSubmitting}
+              className="disabled:opacity-50 w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center"
             >
               <Activity className="mr-2" /> Clasificar con IA →
             </button>
@@ -383,6 +436,16 @@ const PatientIntake = ({ onGoToDashboard }) => {
                 <p className="text-4xl font-bold">{classificationResult.classification}</p>
               </div>
             </div>
+
+            {classificationResult.safety_override && (
+              <div className="bg-red-50 border-l-4 border-red-500 text-red-800 p-4 mb-6 flex items-start">
+                <AlertTriangle className="mr-2 flex-shrink-0" />
+                <p className="text-sm">
+                  El modelo sugería otra categoría, pero se elevó a CRÍTICO por la regla de
+                  seguridad: hay signos vitales con alerta roja (criterio tipo NEWS2).
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-blue-50 rounded-lg p-4 text-center">

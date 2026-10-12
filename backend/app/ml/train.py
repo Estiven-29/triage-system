@@ -36,34 +36,36 @@ FEATURE_COLUMNS = [
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.joblib")
 
 
-def _news2_points(value: float, bands: list[tuple[float, float, int]]) -> int:
-    for low, high, points in bands:
-        if low <= value <= high:
+def _news2_points(value: float, bands: list[tuple[float, int]]) -> int:
+    """Bandas contiguas definidas por su limite superior inclusivo, en orden
+    ascendente. Asi no quedan huecos entre bandas para valores decimales
+    (p. ej. 36.05 C), que antes caian fuera de todo rango y sumaban 3."""
+    for upper, points in bands:
+        if value <= upper:
             return points
-    return 3  # fuera de todos los rangos conocidos: maxima severidad
+    return bands[-1][1]
 
 
-def _early_warning_score(row: pd.Series) -> tuple[int, bool]:
+def early_warning_score(vital_signs) -> tuple[int, bool]:
     """Puntaje inspirado en NEWS2 (subset: no incluye O2 suplementario ni
-    nivel de consciencia porque no se capturan en este formulario)."""
+    nivel de consciencia porque no se capturan en este formulario).
+
+    Acepta un dict o una fila de pandas con las columnas de signos vitales.
+    """
+    inf = float("inf")
     rr_points = _news2_points(
-        row["respiratory_rate"],
-        [(-1e9, 8, 3), (9, 11, 1), (12, 20, 0), (21, 24, 2), (25, 1e9, 3)],
+        vital_signs["respiratory_rate"], [(8, 3), (11, 1), (20, 0), (24, 2), (inf, 3)]
     )
-    spo2_points = _news2_points(
-        row["spo2"], [(-1e9, 91, 3), (92, 93, 2), (94, 95, 1), (96, 1e9, 0)]
-    )
+    spo2_points = _news2_points(vital_signs["spo2"], [(91, 3), (93, 2), (95, 1), (inf, 0)])
     sbp_points = _news2_points(
-        row["systolic_bp"],
-        [(-1e9, 90, 3), (91, 100, 2), (101, 110, 1), (111, 219, 0), (220, 1e9, 3)],
+        vital_signs["systolic_bp"], [(90, 3), (100, 2), (110, 1), (219, 0), (inf, 3)]
     )
     hr_points = _news2_points(
-        row["heart_rate"],
-        [(-1e9, 40, 3), (41, 50, 1), (51, 90, 0), (91, 110, 1), (111, 130, 2), (131, 1e9, 3)],
+        vital_signs["heart_rate"],
+        [(40, 3), (50, 1), (90, 0), (110, 1), (130, 2), (inf, 3)],
     )
     temp_points = _news2_points(
-        row["temperature"],
-        [(-1e9, 35.0, 3), (35.1, 36.0, 1), (36.1, 38.0, 0), (38.1, 39.0, 1), (39.1, 1e9, 2)],
+        vital_signs["temperature"], [(35.0, 3), (36.0, 1), (38.0, 0), (39.0, 1), (inf, 2)]
     )
 
     points = [rr_points, spo2_points, sbp_points, hr_points, temp_points]
@@ -72,7 +74,7 @@ def _early_warning_score(row: pd.Series) -> tuple[int, bool]:
     return total, any_red_flag
 
 
-def _label_from_score(total: int, red_flag: bool) -> str:
+def label_from_score(total: int, red_flag: bool) -> str:
     if red_flag or total >= 7:
         return "CRITICO"
     if total >= 3:
@@ -110,11 +112,11 @@ def generate_synthetic_dataset(n: int = 6000, seed: int = 42) -> pd.DataFrame:
         }
     )
 
-    scores = df.apply(_early_warning_score, axis=1)
+    scores = df.apply(early_warning_score, axis=1)
     df["ews_total"] = [s[0] for s in scores]
     df["ews_red_flag"] = [s[1] for s in scores]
     df["classification"] = [
-        _label_from_score(t, r) for t, r in zip(df["ews_total"], df["ews_red_flag"])
+        label_from_score(t, r) for t, r in zip(df["ews_total"], df["ews_red_flag"])
     ]
 
     # Ruido de etiqueta: ~6% de los casos se "reclasifican" a la categoria
