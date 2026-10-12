@@ -15,9 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from app.db.database import engine, SessionLocal
-    from app.models.models import Base, Patient, MedicalStaff
-    from datetime import datetime
-    import uuid
+    from app.db.migrations import run_migrations
+    from app.models.models import MedicalStaff
 except ImportError as e:
     print(f"Error importando módulos: {e}")
     print("\nVerifica que:")
@@ -27,14 +26,14 @@ except ImportError as e:
     sys.exit(1)
 
 def init_database():
-    """Crear todas las tablas"""
+    """Crear/actualizar las tablas aplicando las migraciones de Alembic"""
     try:
-        print("\n📋 Creando tablas en la base de datos...")
-        Base.metadata.create_all(bind=engine)
-        print("✓ Tablas creadas exitosamente")
+        print("\n📋 Aplicando migraciones (alembic upgrade head)...")
+        run_migrations()
+        print("✓ Esquema de base de datos al dia")
         return True
     except Exception as e:
-        print(f"✗ Error creando tablas: {e}")
+        print(f"✗ Error aplicando migraciones: {e}")
         print("\nPosibles causas:")
         print("- PostgreSQL no está ejecutándose")
         print("- Credenciales incorrectas en .env")
