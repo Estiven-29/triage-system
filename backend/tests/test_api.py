@@ -1,13 +1,31 @@
 import os
 
+# BD de tests nueva en cada ejecucion, para que los resultados no dependan
+# de datos de corridas anteriores.
+if os.path.exists("test_triage.db"):
+    os.remove("test_triage.db")
 os.environ["DATABASE_URL"] = "sqlite:///./test_triage.db"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.db.database import SessionLocal  # noqa: E402
 from app.db.migrations import run_migrations  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.models import MedicalStaff  # noqa: E402
 
 run_migrations()
+
+with SessionLocal() as _db:
+    _db.add(
+        MedicalStaff(
+            employee_id="DOC-TEST",
+            full_name="Dra. Prueba",
+            role="emergency_physician",
+            max_patient_capacity=200,
+            is_available=True,
+        )
+    )
+    _db.commit()
 
 client = TestClient(app)
 
@@ -69,6 +87,7 @@ def test_full_intake_and_classification_flow():
     assert isinstance(body["safety_override"], bool)
     assert body["tiss28_score"] >= 0
     assert isinstance(body["recommended_actions"], list)
+    assert body["assigned_to"] == "Dra. Prueba"
 
     metrics = client.get("/api/dashboard/metrics")
     assert metrics.status_code == 200
@@ -125,3 +144,41 @@ def test_message_to_unknown_session_returns_404():
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Sesion de chatbot no encontrada: no-existe"
+
+
+def _new_classified_patient() -> tuple[str, int]:
+    start = client.post("/api/chatbot/start", json={"first_name": "Luis", "last_name": "Alta"})
+    patient_id = start.json()["session_id"]
+    classify = client.post(
+        "/api/triage/classify",
+        json={"patient_id": patient_id, "vital_signs": VALID_VITALS, "symptoms": []},
+    )
+    assert classify.status_code == 200
+    active = client.get("/api/dashboard/active-patients").json()
+    (entry,) = [p for p in active if p["name"] == "Luis Alta"]
+    return patient_id, int(entry["id"])
+
+
+def _staff_load(name: str) -> dict:
+    (entry,) = [s for s in client.get("/api/dashboard/staff-workload").json() if s["name"] == name]
+    return entry
+
+
+def test_discharge_removes_patient_from_active_list_and_frees_staff_load():
+    _, assessment_id = _new_classified_patient()
+    load_before = _staff_load("Dra. Prueba")
+
+    response = client.post(f"/api/triage/assessments/{assessment_id}/discharge")
+    assert response.status_code == 200
+    assert response.json()["id"] == assessment_id
+
+    active_ids = [int(p["id"]) for p in client.get("/api/dashboard/active-patients").json()]
+    assert assessment_id not in active_ids
+    assert _staff_load("Dra. Prueba")["patients"] == load_before["patients"] - 1
+
+    again = client.post(f"/api/triage/assessments/{assessment_id}/discharge")
+    assert again.status_code == 409
+
+
+def test_discharge_unknown_assessment_returns_404():
+    assert client.post("/api/triage/assessments/999999/discharge").status_code == 404

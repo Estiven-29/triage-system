@@ -483,6 +483,13 @@ const PatientIntake = ({ onGoToDashboard }) => {
               </div>
             </div>
 
+            <p className="text-center text-sm text-gray-600 mb-6">
+              Asignado a:{' '}
+              <span className="font-semibold">
+                {classificationResult.assigned_to || 'Sin asignar (nadie tiene capacidad disponible)'}
+              </span>
+            </p>
+
             {classificationResult.preliminary_diagnoses && classificationResult.preliminary_diagnoses.length > 0 && (
               <div className="mb-6">
                 <h3 className="font-semibold mb-3">Diagnósticos Preliminares Sugeridos por IA:</h3>

@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 
 from ..db.database import get_db
 from ..ml.classifier import classify
-from ..models.models import Patient, TriageAssessment
-from ..schemas.schemas import TriageClassifyRequest, TriageClassifyResponse
+from ..models.models import Patient, TriageAssessment, utcnow
+from ..schemas.schemas import DischargeResponse, TriageClassifyRequest, TriageClassifyResponse
 from ..services.complexity import complexity_level, estimate_complexity_index
 from ..services.diagnosis_suggester import recommend_actions, suggest_preliminary_diagnoses
+from ..services.staff_assignment import pick_staff
 from .websocket import manager
 
 router = APIRouter(prefix="/api/triage", tags=["Triage"])
@@ -57,6 +58,7 @@ def _assess_and_store(payload: TriageClassifyRequest, db: Session) -> TriageClas
         complexity_level=level,
         preliminary_diagnoses=diagnoses,
         recommended_actions=actions,
+        assigned_staff=pick_staff(db, complexity_index),
     )
     db.add(assessment)
     db.commit()
@@ -70,6 +72,7 @@ def _assess_and_store(payload: TriageClassifyRequest, db: Session) -> TriageClas
         complexity_level=level,
         preliminary_diagnoses=diagnoses,
         recommended_actions=actions,
+        assigned_to=assessment.assigned_staff.full_name if assessment.assigned_staff else None,
     )
 
 
@@ -85,4 +88,24 @@ async def classify_patient(payload: TriageClassifyRequest, db: Session = Depends
         }
     )
 
+    return result
+
+
+def _discharge(assessment_id: int, db: Session) -> DischargeResponse:
+    assessment = db.get(TriageAssessment, assessment_id)
+    if assessment is None:
+        raise HTTPException(status_code=404, detail=f"Evaluacion no encontrada: {assessment_id}")
+    if assessment.discharged_at is not None:
+        raise HTTPException(status_code=409, detail="El paciente ya fue dado de alta")
+    assessment.discharged_at = utcnow()
+    db.commit()
+    return DischargeResponse(id=assessment.id, discharged_at=assessment.discharged_at)
+
+
+@router.post("/assessments/{assessment_id}/discharge", response_model=DischargeResponse)
+async def discharge_patient(assessment_id: int, db: Session = Depends(get_db)):
+    """Registra el alta: el paciente deja de contar como activo y libera la
+    carga del profesional asignado."""
+    result = await run_in_threadpool(_discharge, assessment_id, db)
+    await manager.broadcast({"type": "patient_discharged", "assessment_id": result.id})
     return result

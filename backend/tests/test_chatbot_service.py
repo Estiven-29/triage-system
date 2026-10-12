@@ -1,23 +1,9 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from app.models.models import Base, ChatSession, Patient, utcnow
+from app.models.models import ChatSession, Patient, utcnow
 from app.services.chatbot_service import ChatbotService, ChatSessionNotFound, extract_symptoms
-
-
-@pytest.fixture
-def db():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(bind=engine)
-    session = sessionmaker(bind=engine)()
-    yield session
-    session.close()
 
 
 def _start(service, db, first="Juan", last="Perez"):

@@ -1,5 +1,5 @@
 """Esquemas Pydantic para requests/responses de la API."""
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
@@ -96,6 +96,14 @@ class TriageClassifyResponse(BaseModel):
     complexity_level: str
     preliminary_diagnoses: list[PreliminaryDiagnosis]
     recommended_actions: list[str]
+    # Nombre del profesional asignado automaticamente, o None si nadie tenia
+    # capacidad disponible.
+    assigned_to: Optional[str] = None
+
+
+class DischargeResponse(BaseModel):
+    id: int
+    discharged_at: datetime
 
 
 # ---------- Dashboard ----------
@@ -120,6 +128,16 @@ class ActivePatient(BaseModel):
     waitTime: int
     assignedTo: str
     complaint: str
+
+
+class StaffWorkload(BaseModel):
+    id: int
+    name: str
+    role: str
+    tiss28Load: int
+    capacity: int
+    patients: int
+    available: bool
 
 
 class DashboardMetricsResponse(BaseModel):

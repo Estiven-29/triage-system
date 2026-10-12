@@ -63,6 +63,16 @@ export const classifyPatient = async (triageData) => {
   }
 };
 
+export const dischargePatient = async (assessmentId) => {
+  try {
+    const response = await api.post(`/api/triage/assessments/${assessmentId}/discharge`);
+    return response.data;
+  } catch (error) {
+    console.error('Error discharging patient:', error);
+    throw error;
+  }
+};
+
 // ==================== DASHBOARD ====================
 
 export const getDashboardMetrics = async () => {
@@ -81,6 +91,16 @@ export const getActivePatients = async () => {
     return response.data;
   } catch (error) {
     console.error('Error fetching active patients:', error);
+    throw error;
+  }
+};
+
+export const getStaffWorkload = async () => {
+  try {
+    const response = await api.get('/api/dashboard/staff-workload');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching staff workload:', error);
     throw error;
   }
 };

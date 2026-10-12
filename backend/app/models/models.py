@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -79,5 +79,15 @@ class TriageAssessment(Base):
     preliminary_diagnoses = Column(JSON, default=list)
     recommended_actions = Column(JSON, default=list)
 
-    assigned_to = Column(String, nullable=True)
+    # Profesional asignado automaticamente al clasificar (ver
+    # services/staff_assignment.py). Nulo si nadie tenia capacidad libre.
+    assigned_staff_id = Column(
+        Integer,
+        ForeignKey("medical_staff.id", name="fk_triage_assessments_assigned_staff_id"),
+        nullable=True,
+    )
+    assigned_staff = relationship("MedicalStaff")
+
     created_at = Column(DateTime, default=utcnow)
+    # Un paciente esta "activo" mientras no tenga alta registrada.
+    discharged_at = Column(DateTime, nullable=True, index=True)
