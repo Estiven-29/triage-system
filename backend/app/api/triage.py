@@ -1,5 +1,5 @@
 """Endpoint de clasificacion de triage."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,12 @@ _RISK_BASE = {"CRITICO": 70, "URGENTE": 40, "NORMAL": 10}
 def _assess_and_store(payload: TriageClassifyRequest, db: Session) -> TriageClassifyResponse:
     """Inferencia del modelo + escritura en BD. Es trabajo sincrono y
     bloqueante, por eso el endpoint lo ejecuta en el threadpool."""
+    patient = db.get(Patient, payload.patient_id)
+    if patient is None:
+        raise HTTPException(
+            status_code=404, detail=f"Paciente no encontrado: {payload.patient_id}"
+        )
+
     vitals = payload.vital_signs.model_dump()
     symptom_count = len(payload.symptoms)
 
@@ -38,12 +44,9 @@ def _assess_and_store(payload: TriageClassifyRequest, db: Session) -> TriageClas
             "(signos vitales con alerta roja)",
         )
 
-    patient = db.query(Patient).filter(Patient.id == payload.patient_id).first()
-    patient_name = f"{patient.first_name} {patient.last_name}" if patient else "Paciente"
-
     assessment = TriageAssessment(
         patient_id=payload.patient_id,
-        patient_name=patient_name,
+        patient_name=f"{patient.first_name} {patient.last_name}",
         chief_complaint=payload.chief_complaint,
         symptoms=payload.symptoms,
         vital_signs=vitals,

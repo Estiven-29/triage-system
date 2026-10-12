@@ -1,17 +1,11 @@
 """Endpoints del dashboard: metricas y lista de pacientes activos."""
-from datetime import UTC, date, datetime
+from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-
-def _utcnow() -> datetime:
-    # Naive-pero-UTC, igual que en app.models.models, para poder restar
-    # contra TriageAssessment.created_at sin errores de aware/naive.
-    return datetime.now(UTC).replace(tzinfo=None)
-
 from ..db.database import get_db
-from ..models.models import Patient, TriageAssessment
+from ..models.models import Patient, TriageAssessment, utcnow
 from ..schemas.schemas import ActivePatient, DashboardMetricsResponse, SystemMetrics
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -62,7 +56,7 @@ def get_metrics(db: Session = Depends(get_db)):
     urgent = sum(1 for a in assessments if a.classification == "URGENTE")
     normal = sum(1 for a in assessments if a.classification == "NORMAL")
 
-    now = _utcnow()
+    now = utcnow()
     if total:
         avg_wait = sum((now - a.created_at).total_seconds() / 60 for a in assessments) / total
         avg_confidence = sum(a.confidence for a in assessments) / total * 100
@@ -105,7 +99,7 @@ def get_active_patients(db: Session = Depends(get_db)):
         p.id: p for p in db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
     }
 
-    now = _utcnow()
+    now = utcnow()
     result = []
     for a in assessments:
         patient = patients.get(a.patient_id)

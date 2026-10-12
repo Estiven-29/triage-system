@@ -99,3 +99,30 @@ def test_classify_rejects_invalid_vitals():
         },
     )
     assert response.status_code == 422
+
+
+VALID_VITALS = {
+    "heart_rate": 80,
+    "respiratory_rate": 16,
+    "systolic_bp": 120,
+    "diastolic_bp": 80,
+    "spo2": 98,
+    "temperature": 36.8,
+}
+
+
+def test_classify_unknown_patient_returns_404():
+    response = client.post(
+        "/api/triage/classify",
+        json={"patient_id": "no-existe", "vital_signs": VALID_VITALS, "symptoms": []},
+    )
+    assert response.status_code == 404
+    assert "Paciente no encontrado" in response.json()["detail"]
+
+
+def test_message_to_unknown_session_returns_404():
+    response = client.post(
+        "/api/chatbot/message", json={"session_id": "no-existe", "message": "hola"}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Sesion de chatbot no encontrada: no-existe"

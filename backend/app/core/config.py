@@ -16,5 +16,8 @@ class Settings:
         "ALLOWED_ORIGINS", "http://localhost:3000"
     ).split(",")
 
+    # Minutos de inactividad tras los cuales una sesion de chatbot expira.
+    CHAT_SESSION_TTL_MINUTES: int = int(os.getenv("CHAT_SESSION_TTL_MINUTES", "120"))
+
 
 settings = Settings()
