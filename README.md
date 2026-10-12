@@ -68,6 +68,27 @@ No hace falta ejecutar nada más: si no existe un modelo entrenado, el
 backend lo entrena automáticamente en el primer arranque (unos segundos)
 y crea la base de datos SQLite (`triage.db`) en `backend/`.
 
+### Migraciones de base de datos (Alembic)
+
+El esquema se gestiona con migraciones de Alembic (`backend/migrations/`).
+El backend aplica las pendientes al arrancar (`alembic upgrade head`), así
+que normalmente no hay que hacer nada. Si cambias un modelo en
+`app/models/models.py`, genera la migración correspondiente:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe el cambio"
+alembic upgrade head
+```
+
+El test `tests/test_migrations.py` falla si los modelos y las migraciones
+no coinciden.
+
+Si tienes una base de datos creada con una versión anterior del proyecto
+(sin migraciones), el backend se niega a arrancar con un mensaje claro: si
+es de desarrollo, bórrala (`triage.db`); si ya tiene el esquema actual,
+márcala con `alembic stamp head`.
+
 Documentación interactiva: http://localhost:8000/docs
 
 ### Frontend

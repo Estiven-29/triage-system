@@ -4,11 +4,10 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_triage.db"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.db.database import engine  # noqa: E402
+from app.db.migrations import run_migrations  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models.models import Base  # noqa: E402
 
-Base.metadata.create_all(bind=engine)
+run_migrations()
 
 client = TestClient(app)
 

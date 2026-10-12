@@ -6,14 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import chatbot, dashboard, triage, websocket
 from .core.config import settings
-from .db.database import engine
+from .db.migrations import run_migrations
 from .ml.classifier import load_model
-from .models.models import Base
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
     # Cargamos (o entrenamos, si no existe) el modelo al arrancar para que
     # la primera peticion de clasificacion no pague ese costo.
     load_model()
