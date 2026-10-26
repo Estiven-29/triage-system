@@ -1,0 +1,100 @@
+name: CI
+
+# Desactivado en automatico: GitHub Actions no esta disponible en esta cuenta.
+# Solo corre si se lanza a mano (pestana Actions -> CI -> "Run workflow").
+# Mientras tanto, ./check.sh corre los mismos chequeos en local. Para
+# reactivarlo en cada PR, agrega debajo de "on:":
+#   push:
+#     branches: [main]
+#   pull_request:
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint + tests, SQLite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Tests
+        run: pytest -q
+
+  backend-postgres:
+    name: Backend (migrations + tests, PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: triage_test
+          POSTGRES_USER: triage
+          POSTGRES_PASSWORD: triage
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U triage -d triage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://triage:triage@localhost:5432/triage_test
+      TEST_DATABASE_URL: postgresql://triage:triage@localhost:5432/triage_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Migrations round-trip (upgrade, downgrade, upgrade)
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+      - name: Reset database for API tests
+        run: alembic downgrade base
+      - name: API tests against PostgreSQL
+        run: pytest -q tests/test_api.py
+
+  frontend:
+    name: Frontend (tests + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Tests
+        run: npx craco test --watchAll=false
+        env:
+          CI: "true"
+      - name: Build
+        run: npm run build
+        env:
+          CI: "true"

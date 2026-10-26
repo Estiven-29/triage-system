@@ -1,22 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { Activity, Users, Clock, AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react';
-import { getDashboardMetrics, getActivePatients, connectWebSocket } from '../services/api';
-
-// Carga de personal: el backend no modela asignacion/turnos de personal,
-// asi que esta seccion se mantiene como dato ilustrativo (se indica en la UI).
-const ILLUSTRATIVE_STAFF_WORKLOAD = [
-  { name: 'Dr. García', role: 'Cardiólogo', tiss28Load: 60, capacity: 70, patients: 2, ratio: '1:1', available: true },
-  { name: 'Dra. Martínez', role: 'Urgencias', tiss28Load: 53, capacity: 60, patients: 2, ratio: '1:2', available: true },
-  { name: 'Dr. López', role: 'Urgencias', tiss28Load: 28, capacity: 50, patients: 1, ratio: '1:3', available: true },
-  { name: 'Dra. Fernández', role: 'Cirugía', tiss28Load: 15, capacity: 50, patients: 0, ratio: '0:0', available: true }
-];
+import {
+  API_BASE_URL,
+  getDashboardMetrics,
+  getActivePatients,
+  getStaffWorkload,
+  dischargePatient,
+  getErrorMessage,
+  connectWebSocket,
+} from '../services/api';
 
 const TriageDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [realTimeData, setRealTimeData] = useState({
     activePatients: [],
-    staffWorkload: ILLUSTRATIVE_STAFF_WORKLOAD,
+    staffWorkload: [],
     systemMetrics: {
       totalPatients: 0,
       critical: 0,
@@ -29,18 +28,34 @@ const TriageDashboard = () => {
     tiss28Distribution: []
   });
   const [loadError, setLoadError] = useState(false);
+  const [dischargingId, setDischargingId] = useState(null);
+
+  const handleDischarge = async (patient) => {
+    if (!window.confirm(`¿Dar de alta a ${patient.name}?`)) return;
+    setDischargingId(patient.id);
+    try {
+      await dischargePatient(patient.id);
+      await refresh();
+    } catch (error) {
+      alert(getErrorMessage(error, 'No se pudo dar de alta al paciente.'));
+    } finally {
+      setDischargingId(null);
+    }
+  };
 
   const refresh = useCallback(async () => {
     try {
-      const [metrics, activePatients] = await Promise.all([
+      const [metrics, activePatients, staffWorkload] = await Promise.all([
         getDashboardMetrics(),
         getActivePatients(),
+        getStaffWorkload(),
       ]);
       setRealTimeData(prev => ({
         ...prev,
         systemMetrics: metrics.systemMetrics,
         tiss28Distribution: metrics.tiss28Distribution,
         activePatients,
+        staffWorkload,
       }));
       setLoadError(false);
     } catch (error) {
@@ -52,12 +67,12 @@ const TriageDashboard = () => {
   useEffect(() => {
     refresh();
 
-    // Polling como respaldo cada 8s, mas un refresco inmediato cuando el
-    // WebSocket avisa que se clasifico un paciente nuevo.
-    const interval = setInterval(refresh, 8000);
-    const ws = connectWebSocket((event) => {
-      if (event.type === 'new_patient') refresh();
-    });
+    // El WebSocket refresca al instante (y se reconecta solo si se cae);
+    // el polling cada 30 s queda solo como red de seguridad.
+    const interval = setInterval(refresh, 30000);
+    // Cualquier evento (paciente nuevo, alta o reconexion) puede cambiar
+    // los datos del dashboard.
+    const ws = connectWebSocket(() => refresh());
 
     return () => {
       clearInterval(interval);
@@ -116,11 +131,21 @@ const TriageDashboard = () => {
           <p className="font-bold text-xs truncate">{patient.assignedTo}</p>
         </div>
       </div>
+
+      <div className="flex justify-end mt-3">
+        <button
+          onClick={() => handleDischarge(patient)}
+          disabled={dischargingId === patient.id}
+          className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+        >
+          {dischargingId === patient.id ? 'Dando de alta…' : 'Dar de alta'}
+        </button>
+      </div>
     </div>
   );
 
   const StaffWorkloadCard = ({ staff }) => {
-    const loadPercentage = (staff.tiss28Load / staff.capacity) * 100;
+    const loadPercentage = staff.capacity ? Math.min(100, (staff.tiss28Load / staff.capacity) * 100) : 100;
     let statusColor = '#10b981';
     if (loadPercentage > 80) statusColor = '#ef4444';
     else if (loadPercentage > 60) statusColor = '#f59e0b';
@@ -133,7 +158,7 @@ const TriageDashboard = () => {
             <p className="text-sm text-gray-500">{staff.role}</p>
           </div>
           <span className={`px-2 py-1 rounded text-xs font-semibold ${staff.available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {staff.available ? 'Disponible' : 'Ocupado'}
+            {staff.available ? 'Disponible' : 'No disponible'}
           </span>
         </div>
 
@@ -156,7 +181,7 @@ const TriageDashboard = () => {
           </div>
           <div>
             <span className="text-gray-500">Ratio:</span>
-            <span className="font-bold ml-2">{staff.ratio}</span>
+            <span className="font-bold ml-2">{staff.patients ? `1:${staff.patients}` : '—'}</span>
           </div>
         </div>
       </div>
@@ -176,7 +201,7 @@ const TriageDashboard = () => {
           <div className="bg-red-50 border-l-4 border-red-400 p-4 flex items-center">
             <AlertCircle className="w-5 h-5 text-red-600 mr-2 flex-shrink-0" />
             <p className="text-sm text-red-700">
-              No se pudo conectar con el backend ({process.env.REACT_APP_API_URL || 'http://localhost:8000'}).
+              No se pudo conectar con el backend ({API_BASE_URL}).
               Verifica que este corriendo.
             </p>
           </div>
@@ -283,14 +308,22 @@ const TriageDashboard = () => {
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-bold mb-1">Carga de Trabajo del Personal (TISS-28)</h3>
         <p className="text-xs text-gray-400 mb-4">
-          Datos de ejemplo con fines ilustrativos: el backend aun no gestiona asignacion de personal.
+          Carga = suma del índice de complejidad de los pacientes activos asignados.
+          Cada paciente nuevo se asigna al profesional disponible con menor carga relativa.
         </p>
+
+        {realTimeData.staffWorkload.length === 0 && (
+          <p className="text-gray-500 text-sm py-4">
+            No hay personal registrado. Ejecuta <code>python init_db.py</code> en <code>backend/</code> para
+            crear personal de ejemplo; mientras tanto los pacientes quedan "Sin asignar".
+          </p>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div>
             <h4 className="font-semibold mb-3 text-gray-700">Personal Médico</h4>
-            {realTimeData.staffWorkload.map((staff, idx) => (
-              <StaffWorkloadCard key={idx} staff={staff} />
+            {realTimeData.staffWorkload.map((staff) => (
+              <StaffWorkloadCard key={staff.id} staff={staff} />
             ))}
           </div>
 

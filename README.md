@@ -22,7 +22,7 @@ muestra los pacientes ya clasificados con datos reales (no simulados).
 | Índice "TISS-28" | **Aproximación**, no la escala clínica real (que requiere un checklist de 28 intervenciones de enfermería, dato que esta app no captura). Ver el docstring de `backend/app/services/complexity.py`. |
 | Diagnósticos preliminares | **Heurística por palabras clave**, no un modelo de diagnóstico entrenado. |
 | Dashboard (Vista General) | **Real**, calculado desde la base de datos con los pacientes efectivamente clasificados. |
-| Dashboard (Carga de Trabajo TISS-28, Analítica) | **Parcialmente ilustrativo** — la asignación de personal y la tendencia horaria son datos de ejemplo (se indica en la UI); el radar de "Rendimiento del Modelo ML" sí usa métricas reales. |
+| Dashboard (Carga de Trabajo TISS-28, Analítica) | **Parcialmente ilustrativo** — la asignación y carga del personal son reales (asignación automática por menor carga relativa; requiere personal creado con `init_db.py`), pero la tendencia horaria sigue siendo un dato de ejemplo (se indica en la UI); el radar de "Rendimiento del Modelo ML" sí usa métricas reales. |
 
 ## Arquitectura
 
@@ -68,6 +68,38 @@ No hace falta ejecutar nada más: si no existe un modelo entrenado, el
 backend lo entrena automáticamente en el primer arranque (unos segundos)
 y crea la base de datos SQLite (`triage.db`) en `backend/`.
 
+### Acceso del personal (login)
+
+El intake del paciente (chatbot y clasificación) es público, porque se usa
+en el puesto de admisión. El **dashboard**, las **altas** y el **WebSocket**
+muestran datos de todos los pacientes y requieren iniciar sesión.
+
+`python init_db.py` crea 4 cuentas de ejemplo (`DOC001` a `DOC004`) con la
+contraseña `triage-demo` (configurable con `DEMO_STAFF_PASSWORD`). Las
+sesiones son tokens JWT firmados con `SECRET_KEY`: defínela fuera de
+desarrollo, o las sesiones se invalidarán en cada reinicio.
+
+### Migraciones de base de datos (Alembic)
+
+El esquema se gestiona con migraciones de Alembic (`backend/migrations/`).
+El backend aplica las pendientes al arrancar (`alembic upgrade head`), así
+que normalmente no hay que hacer nada. Si cambias un modelo en
+`app/models/models.py`, genera la migración correspondiente:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe el cambio"
+alembic upgrade head
+```
+
+El test `tests/test_migrations.py` falla si los modelos y las migraciones
+no coinciden.
+
+Si tienes una base de datos creada con una versión anterior del proyecto
+(sin migraciones), el backend se niega a arrancar con un mensaje claro: si
+es de desarrollo, bórrala (`triage.db`); si ya tiene el esquema actual,
+márcala con `alembic stamp head`.
+
 Documentación interactiva: http://localhost:8000/docs
 
 ### Frontend
@@ -98,6 +130,20 @@ python ../ml-training/evaluate_model.py     # evalúa con un conjunto nuevo (sem
 
 ## Pruebas
 
+Antes de cada commit o PR, corre todos los chequeos (lint y tests del
+backend, tests y build del frontend) con:
+
+```bash
+./check.sh            # todo
+./check.sh backend    # solo backend
+./check.sh frontend   # solo frontend
+```
+
+En Windows, ejecútalo desde Git Bash (incluido con Git para Windows), con el
+entorno virtual del backend activado. Es lo mismo que hace el workflow `.github/workflows/ci.yml`, que está
+configurado para correr solo de forma manual. El encabezado del script explica
+cómo probar también contra PostgreSQL con una base desechable.
+
 ```bash
 cd backend && .venv\Scripts\activate
 pytest -v
@@ -111,10 +157,16 @@ la API (intake → chatbot → clasificación → dashboard).
 
 - `POST /api/chatbot/start` — inicia la sesión de intake
 - `POST /api/chatbot/message` — envía un mensaje al chatbot
-- `POST /api/triage/classify` — clasifica al paciente con los signos vitales
-- `GET /api/dashboard/metrics` — métricas agregadas de los últimos casos
-- `GET /api/dashboard/active-patients` — lista de pacientes recientes
-- `WS /ws/triage` — notifica cuando se clasifica un paciente nuevo
+- `POST /api/triage/classify` — clasifica al paciente con los signos vitales y lo asigna al profesional disponible con menor carga
+- `POST /api/auth/login` — inicia sesión del personal y devuelve un token JWT
+- `GET /api/auth/me` — datos del personal con la sesión actual 🔒
+- `POST /api/triage/assessments/{id}/discharge` 🔒 — da de alta al paciente (deja de estar activo y libera carga)
+- `GET /api/dashboard/metrics` 🔒 — métricas agregadas de los pacientes activos (sin alta)
+- `GET /api/dashboard/active-patients` 🔒 — lista de pacientes activos
+- `GET /api/dashboard/staff-workload` 🔒 — carga actual de cada profesional
+- `WS /ws/triage` 🔒 — notifica cuando se clasifica o da de alta a un paciente (el token se envía como primer mensaje)
+
+🔒 = requiere `Authorization: Bearer <token>` del personal.
 
 ## Variables de entorno (backend)
 

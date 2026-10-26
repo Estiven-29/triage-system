@@ -10,7 +10,12 @@ palabras clave.
 from __future__ import annotations
 
 import unicodedata
-import uuid
+from datetime import timedelta
+
+from sqlalchemy.orm import Session
+
+from ..core.config import settings
+from ..models.models import ChatSession, Patient, utcnow
 
 SYMPTOM_KEYWORDS: dict[str, str] = {
     "dolor de cabeza": "cefalea",
@@ -61,35 +66,50 @@ def extract_symptoms(*texts: str) -> list[str]:
     return found
 
 
-class ChatbotSession:
-    def __init__(self, patient_name: str):
-        self.patient_name = patient_name
-        self.turn = 0
-        self.chief_complaint = ""
-        self.symptoms: list[str] = []
+class ChatSessionNotFound(KeyError):
+    """La sesion no existe o expiro por inactividad."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
 class ChatbotService:
-    """Sesiones en memoria. Para produccion real se recomienda Redis u otro
-    almacen compartido si el backend corre con multiples workers."""
+    """Sesiones persistidas en la tabla chat_sessions. Al guardarse en BD no
+    crecen sin limite en memoria, sobreviven a reinicios y funcionan con
+    varios workers. Las que pasan ttl_minutes sin actividad expiran y se
+    borran de forma perezosa al iniciar sesiones nuevas."""
 
-    def __init__(self):
-        self._sessions: dict[str, ChatbotSession] = {}
+    def __init__(self, ttl_minutes: int = settings.CHAT_SESSION_TTL_MINUTES):
+        self.ttl = timedelta(minutes=ttl_minutes)
 
-    def start_session(self, patient_name: str) -> tuple[str, str]:
-        session_id = str(uuid.uuid4())
-        self._sessions[session_id] = ChatbotSession(patient_name)
-        greeting = (
+    def _is_expired(self, session: ChatSession) -> bool:
+        return session.updated_at < utcnow() - self.ttl
+
+    def purge_expired(self, db: Session) -> int:
+        cutoff = utcnow() - self.ttl
+        return db.query(ChatSession).filter(ChatSession.updated_at < cutoff).delete()
+
+    def start_session(self, db: Session, patient: Patient) -> str:
+        """Crea la sesion para un paciente ya agregado a `db` y devuelve el
+        saludo. No hace commit: el llamador confirma paciente y sesion juntos."""
+        self.purge_expired(db)
+        patient_name = f"{patient.first_name} {patient.last_name}".strip()
+        db.add(ChatSession(id=patient.id, patient_name=patient_name))
+        return (
             f"Hola {patient_name}, soy el asistente de admision. "
             "Cuentame en tus palabras: ¿cual es el motivo principal de tu "
             "consulta y que sintomas presentas?"
         )
-        return session_id, greeting
 
-    def handle_message(self, session_id: str, message: str) -> dict:
-        session = self._sessions.get(session_id)
+    def handle_message(self, db: Session, session_id: str, message: str) -> dict:
+        session = db.get(ChatSession, session_id)
         if session is None:
-            raise KeyError(f"Sesion de chatbot no encontrada: {session_id}")
+            raise ChatSessionNotFound(f"Sesion de chatbot no encontrada: {session_id}")
+        if self._is_expired(session):
+            db.delete(session)
+            db.commit()
+            raise ChatSessionNotFound(f"La sesion de chatbot expiro: {session_id}")
 
         session.turn += 1
 
@@ -100,33 +120,26 @@ class ChatbotService:
                 "Entiendo. ¿Desde hace cuanto tiempo tienes estos sintomas "
                 "y en una escala del 1 al 10, que tan intensos son?"
             )
-            return {
-                "response": response,
-                "extracted_data": {
-                    "chief_complaint": session.chief_complaint,
-                    "symptoms": session.symptoms,
-                },
-                "conversation_complete": False,
-            }
+            complete = False
+        else:
+            # Turno 2: cerramos la conversacion y volvemos a extraer por si
+            # el paciente menciono sintomas nuevos en este mensaje.
+            session.symptoms = extract_symptoms(session.chief_complaint, message)
+            response = (
+                "Gracias por la informacion. Ahora vamos a registrar tus signos "
+                "vitales para completar la clasificacion."
+            )
+            complete = True
 
-        # Turno 2: cerramos la conversacion y volvemos a extraer por si
-        # el paciente menciono sintomas nuevos en este mensaje.
-        session.symptoms = extract_symptoms(session.chief_complaint, message)
-        response = (
-            "Gracias por la informacion. Ahora vamos a registrar tus signos "
-            "vitales para completar la clasificacion."
-        )
+        db.commit()
         return {
             "response": response,
             "extracted_data": {
                 "chief_complaint": session.chief_complaint,
                 "symptoms": session.symptoms,
             },
-            "conversation_complete": True,
+            "conversation_complete": complete,
         }
-
-    def get_session(self, session_id: str) -> ChatbotSession | None:
-        return self._sessions.get(session_id)
 
 
 chatbot_service = ChatbotService()

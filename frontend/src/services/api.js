@@ -1,6 +1,23 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// Misma base que la API REST, cambiando http(s) por ws(s).
+export const WS_URL = `${API_BASE_URL.replace(/^http/, 'ws')}/ws/triage`;
+
+// Convierte un error de axios en un mensaje legible para el usuario.
+// FastAPI devuelve `detail` como string (404) o como lista de errores (422).
+export const getErrorMessage = (error, fallback = 'Ocurrió un error inesperado') => {
+  if (!error.response) {
+    return `No se pudo conectar con el backend (${API_BASE_URL}).`;
+  }
+  const { detail } = error.response.data || {};
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((d) => `${d.loc?.slice(-1)[0] ?? ''}: ${d.msg}`).join('; ');
+  }
+  return fallback;
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -8,6 +25,69 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// ==================== AUTENTICACIÓN ====================
+
+// El token del personal vive en sessionStorage: se borra al cerrar la
+// pestaña. El acceso puede fallar (modo privado, almacenamiento bloqueado),
+// por eso cada lectura/escritura va en try/catch.
+const TOKEN_KEY = 'triage_staff_token';
+
+export const getAuthToken = () => {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const setAuthToken = (token) => {
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Sin almacenamiento la sesión dura solo mientras la página esté abierta.
+  }
+};
+
+let onUnauthorized = () => {};
+
+// Permite a la app reaccionar (volver al login) cuando el backend rechaza
+// el token por inválido o expirado.
+export const setUnauthorizedHandler = (handler) => {
+  onUnauthorized = handler;
+};
+
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const isLogin = error.config?.url === '/api/auth/login';
+    if (error.response?.status === 401 && !isLogin) {
+      setAuthToken(null);
+      onUnauthorized();
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const login = async (employeeId, password) => {
+  const response = await api.post('/api/auth/login', { employee_id: employeeId, password });
+  setAuthToken(response.data.access_token);
+  return response.data.staff;
+};
+
+export const getCurrentStaff = async () => {
+  const response = await api.get('/api/auth/me');
+  return response.data;
+};
+
+export const logout = () => setAuthToken(null);
 
 // ==================== CHATBOT ====================
 
@@ -46,6 +126,16 @@ export const classifyPatient = async (triageData) => {
   }
 };
 
+export const dischargePatient = async (assessmentId) => {
+  try {
+    const response = await api.post(`/api/triage/assessments/${assessmentId}/discharge`);
+    return response.data;
+  } catch (error) {
+    console.error('Error discharging patient:', error);
+    throw error;
+  }
+};
+
 // ==================== DASHBOARD ====================
 
 export const getDashboardMetrics = async () => {
@@ -68,29 +158,67 @@ export const getActivePatients = async () => {
   }
 };
 
+export const getStaffWorkload = async () => {
+  try {
+    const response = await api.get('/api/dashboard/staff-workload');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching staff workload:', error);
+    throw error;
+  }
+};
+
 // ==================== WEBSOCKET ====================
 
+// Cierre 1008 = el servidor rechazó el token: reintentar no sirve.
+const WS_POLICY_VIOLATION = 1008;
+const WS_MAX_RETRY_DELAY_MS = 30000;
+
+// Abre el WebSocket y lo reconecta solo si se cae, esperando 1 s, 2 s,
+// 4 s... hasta 30 s entre intentos. Cada (re)conexión emite
+// { type: 'connected' } para que el llamador recargue datos que pudo
+// perderse mientras estaba desconectado. Devuelve { close } para detenerlo.
 export const connectWebSocket = (onMessage) => {
-  const ws = new WebSocket(`ws://localhost:8000/ws/triage`);
+  let ws = null;
+  let retryDelay = 1000;
+  let retryTimer = null;
+  let stopped = false;
 
-  ws.onopen = () => {
-    console.log('WebSocket connected');
+  const open = () => {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      // El token va como primer mensaje y no en la URL, para que no quede
+      // registrado en los logs de acceso del servidor.
+      ws.send(getAuthToken() || '');
+      retryDelay = 1000;
+      onMessage({ type: 'connected' });
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        onMessage(JSON.parse(event.data));
+      } catch (error) {
+        console.error('Mensaje WebSocket inválido:', error);
+      }
+    };
+
+    ws.onclose = (event) => {
+      if (stopped || event.code === WS_POLICY_VIOLATION) return;
+      retryTimer = setTimeout(open, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, WS_MAX_RETRY_DELAY_MS);
+    };
   };
 
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
-  };
+  open();
 
-  ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
+  return {
+    close: () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      ws?.close();
+    },
   };
-
-  ws.onclose = () => {
-    console.log('WebSocket disconnected');
-  };
-
-  return ws;
 };
 
 export default api;

@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.complexity import complexity_level, estimate_complexity_index
 
 NORMAL_VITALS = {
@@ -31,7 +33,10 @@ def test_critical_vitals_have_high_complexity():
     assert complexity_level(index) in {"Alta", "Muy Alta", "Critica"}
 
 
-def test_complexity_level_boundaries():
-    assert complexity_level(10) == "Baja"
-    assert complexity_level(11) == "Moderada"
-    assert complexity_level(41) == "Critica"
+@pytest.mark.parametrize(
+    "index, level",
+    [(0, "Baja"), (10, "Baja"), (11, "Moderada"), (20, "Moderada"), (30, "Alta"),
+     (31, "Muy Alta"), (40, "Muy Alta"), (41, "Critica"), (99, "Critica")],
+)
+def test_complexity_level_boundaries(index, level):
+    assert complexity_level(index) == level

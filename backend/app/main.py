@@ -4,15 +4,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import chatbot, dashboard, triage, websocket
+from .api import auth, chatbot, dashboard, triage, websocket
 from .core.config import settings
-from .db.database import engine
-from .models.models import Base
+from .db.migrations import run_migrations
+from .ml.classifier import load_model
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
+    # Cargamos (o entrenamos, si no existe) el modelo al arrancar para que
+    # la primera peticion de clasificacion no pague ese costo.
+    load_model()
     yield
 
 
@@ -37,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(chatbot.router)
 app.include_router(triage.router)
 app.include_router(dashboard.router)

@@ -33,13 +33,23 @@ def estimate_complexity_index(vital_signs: dict, symptom_count: int) -> int:
     return score
 
 
+# Niveles de complejidad: (limite superior inclusivo, nombre, etiqueta del
+# rango). Fuente unica para la clasificacion y los buckets del dashboard.
+COMPLEXITY_LEVELS: list[tuple[float, str, str]] = [
+    (10, "Baja", "0-10"),
+    (20, "Moderada", "11-20"),
+    (30, "Alta", "21-30"),
+    (40, "Muy Alta", "31-40"),
+    (float("inf"), "Critica", "41+"),
+]
+
+
+def complexity_level_index(index: int) -> int:
+    for position, (upper, _name, _range) in enumerate(COMPLEXITY_LEVELS):
+        if index <= upper:
+            return position
+    return len(COMPLEXITY_LEVELS) - 1
+
+
 def complexity_level(index: int) -> str:
-    if index <= 10:
-        return "Baja"
-    if index <= 20:
-        return "Moderada"
-    if index <= 30:
-        return "Alta"
-    if index <= 40:
-        return "Muy Alta"
-    return "Critica"
+    return COMPLEXITY_LEVELS[complexity_level_index(index)][1]

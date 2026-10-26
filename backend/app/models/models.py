@@ -2,8 +2,8 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -12,7 +12,7 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     # Naive datetime (sin tzinfo) a proposito: SQLite no preserva timezone
     # en las columnas DateTime, asi que mantenemos todo naive-pero-UTC de
     # forma consistente en vez de mezclar aware/naive al comparar despues.
@@ -30,6 +30,8 @@ class MedicalStaff(Base):
     license_number = Column(String)
     max_patient_capacity = Column(Integer, default=50)
     is_available = Column(Boolean, default=True)
+    # Hash scrypt (app.core.security). Nulo = no puede iniciar sesion.
+    password_hash = Column(String, nullable=True)
 
 
 class Patient(Base):
@@ -40,7 +42,23 @@ class Patient(Base):
     last_name = Column(String, nullable=False)
     date_of_birth = Column(String)
     gender = Column(String)
-    created_at = Column(DateTime, default=_utcnow)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class ChatSession(Base):
+    """Estado de la conversacion de intake. Se guarda en BD (no en memoria)
+    para que sobreviva reinicios, funcione con varios workers y no crezca
+    sin limite en RAM. Comparte id con el Patient que la origino."""
+
+    __tablename__ = "chat_sessions"
+
+    id = Column(String, ForeignKey("patients.id"), primary_key=True)
+    patient_name = Column(String, nullable=False)
+    turn = Column(Integer, nullable=False, default=0)
+    chief_complaint = Column(String, nullable=False, default="")
+    symptoms = Column(JSON, default=list)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class TriageAssessment(Base):
@@ -49,7 +67,7 @@ class TriageAssessment(Base):
     __tablename__ = "triage_assessments"
 
     id = Column(Integer, primary_key=True, index=True)
-    patient_id = Column(String, index=True, nullable=False)
+    patient_id = Column(String, ForeignKey("patients.id"), index=True, nullable=False)
     patient_name = Column(String)
     chief_complaint = Column(String)
     symptoms = Column(JSON, default=list)
@@ -63,5 +81,15 @@ class TriageAssessment(Base):
     preliminary_diagnoses = Column(JSON, default=list)
     recommended_actions = Column(JSON, default=list)
 
-    assigned_to = Column(String, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
+    # Profesional asignado automaticamente al clasificar (ver
+    # services/staff_assignment.py). Nulo si nadie tenia capacidad libre.
+    assigned_staff_id = Column(
+        Integer,
+        ForeignKey("medical_staff.id", name="fk_triage_assessments_assigned_staff_id"),
+        nullable=True,
+    )
+    assigned_staff = relationship("MedicalStaff")
+
+    created_at = Column(DateTime, default=utcnow)
+    # Un paciente esta "activo" mientras no tenga alta registrada.
+    discharged_at = Column(DateTime, nullable=True, index=True)

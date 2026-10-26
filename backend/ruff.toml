@@ -1,0 +1,10 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+# E/F: errores de pycodestyle y pyflakes; I: orden de imports.
+select = ["E", "F", "I"]
+
+[lint.per-file-ignores]
+# Migraciones autogeneradas por Alembic: no forzamos el largo de linea.
+"migrations/versions/*.py" = ["E501"]
