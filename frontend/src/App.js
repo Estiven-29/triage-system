@@ -1,11 +1,29 @@
 // src/App.js
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
 import TriageDashboard from './components/TriageDashboard';
 import PatientIntake from './components/PatientIntake';
+import StaffLogin from './components/StaffLogin';
+import { getAuthToken, getCurrentStaff, logout, setUnauthorizedHandler } from './services/api';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
+  // Personal con sesion iniciada; null = hay que mostrar el login antes del dashboard.
+  const [staff, setStaff] = useState(null);
+
+  useEffect(() => {
+    // Si el backend rechaza el token (expirado o invalido), volvemos al login.
+    setUnauthorizedHandler(() => setStaff(null));
+    // Recuperamos la sesion si la pestaña ya tenia un token guardado.
+    if (getAuthToken()) {
+      getCurrentStaff().then(setStaff).catch(() => setStaff(null));
+    }
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setStaff(null);
+  };
 
   const HomePage = () => (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
@@ -100,7 +118,19 @@ function App() {
           >
             ← Volver al inicio
           </button>
-          <TriageDashboard />
+          {staff ? (
+            <>
+              <div className="fixed top-4 right-4 z-50 bg-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 text-sm">
+                <span className="text-gray-600">{staff.full_name}</span>
+                <button onClick={handleLogout} className="text-blue-600 hover:underline">
+                  Cerrar sesión
+                </button>
+              </div>
+              <TriageDashboard />
+            </>
+          ) : (
+            <StaffLogin onLoggedIn={setStaff} />
+          )}
         </div>
       )}
     </div>

@@ -14,8 +14,12 @@ from ..schemas.schemas import (
 )
 from ..services.complexity import COMPLEXITY_LEVELS, complexity_level_index
 from ..services.staff_assignment import staff_loads
+from .auth import require_staff
 
-router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+# Todo el dashboard expone datos de pacientes: requiere sesion del personal.
+router = APIRouter(
+    prefix="/api/dashboard", tags=["Dashboard"], dependencies=[Depends(require_staff)]
+)
 
 # Tope de seguridad para no devolver listas enormes si nadie da altas.
 MAX_ACTIVE_PATIENTS = 200

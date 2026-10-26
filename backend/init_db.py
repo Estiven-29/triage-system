@@ -14,6 +14,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
+    from app.core.security import hash_password
     from app.db.database import SessionLocal, engine
     from app.db.migrations import run_migrations
     from app.models.models import MedicalStaff
@@ -40,6 +41,21 @@ def init_database():
         print("- Base de datos 'triage_db' no existe")
         return False
 
+# Contrasena de las cuentas de ejemplo. Solo para desarrollo/demo: cambiala
+# con DEMO_STAFF_PASSWORD y nunca reutilices estas cuentas en produccion.
+DEMO_STAFF_PASSWORD = os.getenv("DEMO_STAFF_PASSWORD", "triage-demo")
+
+
+def _set_missing_passwords(db):
+    """Asigna la contrasena de ejemplo al personal que todavia no tiene una
+    (p. ej. creado antes de que existiera el login)."""
+    without_password = db.query(MedicalStaff).filter(MedicalStaff.password_hash.is_(None)).all()
+    for staff in without_password:
+        staff.password_hash = hash_password(DEMO_STAFF_PASSWORD)
+    db.commit()
+    return len(without_password)
+
+
 def create_sample_staff():
     """Crear personal médico de ejemplo"""
     print("\n👥 Creando personal médico de ejemplo...")
@@ -51,6 +67,9 @@ def create_sample_staff():
         if existing:
             print("⚠️  Personal médico ya existe en la base de datos")
             print(f"   Encontrados {db.query(MedicalStaff).count()} registros")
+            updated = _set_missing_passwords(db)
+            if updated:
+                print(f"✓ Contraseña de ejemplo asignada a {updated} miembros sin contraseña")
             return True
         
         staff_data = [
@@ -93,11 +112,13 @@ def create_sample_staff():
         ]
         
         for staff in staff_data:
-            db_staff = MedicalStaff(**staff)
+            db_staff = MedicalStaff(**staff, password_hash=hash_password(DEMO_STAFF_PASSWORD))
             db.add(db_staff)
         
         db.commit()
         print(f"✓ {len(staff_data)} miembros del personal médico creados")
+        print("   Login del dashboard: número de empleado DOC001..DOC004")
+        print(f"   Contraseña de ejemplo: {DEMO_STAFF_PASSWORD} (cámbiala con DEMO_STAFF_PASSWORD)")
         return True
         
     except Exception as e:

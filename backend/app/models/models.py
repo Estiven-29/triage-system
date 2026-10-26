@@ -30,6 +30,8 @@ class MedicalStaff(Base):
     license_number = Column(String)
     max_patient_capacity = Column(Integer, default=50)
     is_available = Column(Boolean, default=True)
+    # Hash scrypt (app.core.security). Nulo = no puede iniciar sesion.
+    password_hash = Column(String, nullable=True)
 
 
 class Patient(Base):

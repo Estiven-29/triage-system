@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import chatbot, dashboard, triage, websocket
+from .api import auth, chatbot, dashboard, triage, websocket
 from .core.config import settings
 from .db.migrations import run_migrations
 from .ml.classifier import load_model
@@ -40,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(chatbot.router)
 app.include_router(triage.router)
 app.include_router(dashboard.router)

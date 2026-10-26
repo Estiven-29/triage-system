@@ -26,6 +26,69 @@ const api = axios.create({
   },
 });
 
+// ==================== AUTENTICACIÓN ====================
+
+// El token del personal vive en sessionStorage: se borra al cerrar la
+// pestaña. El acceso puede fallar (modo privado, almacenamiento bloqueado),
+// por eso cada lectura/escritura va en try/catch.
+const TOKEN_KEY = 'triage_staff_token';
+
+export const getAuthToken = () => {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const setAuthToken = (token) => {
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Sin almacenamiento la sesión dura solo mientras la página esté abierta.
+  }
+};
+
+let onUnauthorized = () => {};
+
+// Permite a la app reaccionar (volver al login) cuando el backend rechaza
+// el token por inválido o expirado.
+export const setUnauthorizedHandler = (handler) => {
+  onUnauthorized = handler;
+};
+
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const isLogin = error.config?.url === '/api/auth/login';
+    if (error.response?.status === 401 && !isLogin) {
+      setAuthToken(null);
+      onUnauthorized();
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const login = async (employeeId, password) => {
+  const response = await api.post('/api/auth/login', { employee_id: employeeId, password });
+  setAuthToken(response.data.access_token);
+  return response.data.staff;
+};
+
+export const getCurrentStaff = async () => {
+  const response = await api.get('/api/auth/me');
+  return response.data;
+};
+
+export const logout = () => setAuthToken(null);
+
 // ==================== CHATBOT ====================
 
 export const startChatbotSession = async (patientData) => {
@@ -111,7 +174,9 @@ export const connectWebSocket = (onMessage) => {
   const ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
-    console.log('WebSocket connected');
+    // El token va como primer mensaje y no en la URL, para que no quede
+    // registrado en los logs de acceso del servidor.
+    ws.send(getAuthToken() || '');
   };
 
   ws.onmessage = (event) => {

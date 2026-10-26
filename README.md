@@ -68,6 +68,17 @@ No hace falta ejecutar nada más: si no existe un modelo entrenado, el
 backend lo entrena automáticamente en el primer arranque (unos segundos)
 y crea la base de datos SQLite (`triage.db`) en `backend/`.
 
+### Acceso del personal (login)
+
+El intake del paciente (chatbot y clasificación) es público, porque se usa
+en el puesto de admisión. El **dashboard**, las **altas** y el **WebSocket**
+muestran datos de todos los pacientes y requieren iniciar sesión.
+
+`python init_db.py` crea 4 cuentas de ejemplo (`DOC001` a `DOC004`) con la
+contraseña `triage-demo` (configurable con `DEMO_STAFF_PASSWORD`). Las
+sesiones son tokens JWT firmados con `SECRET_KEY`: defínela fuera de
+desarrollo, o las sesiones se invalidarán en cada reinicio.
+
 ### Migraciones de base de datos (Alembic)
 
 El esquema se gestiona con migraciones de Alembic (`backend/migrations/`).
@@ -133,11 +144,15 @@ la API (intake → chatbot → clasificación → dashboard).
 - `POST /api/chatbot/start` — inicia la sesión de intake
 - `POST /api/chatbot/message` — envía un mensaje al chatbot
 - `POST /api/triage/classify` — clasifica al paciente con los signos vitales y lo asigna al profesional disponible con menor carga
-- `POST /api/triage/assessments/{id}/discharge` — da de alta al paciente (deja de estar activo y libera carga)
-- `GET /api/dashboard/metrics` — métricas agregadas de los pacientes activos (sin alta)
-- `GET /api/dashboard/active-patients` — lista de pacientes activos
-- `GET /api/dashboard/staff-workload` — carga actual de cada profesional
-- `WS /ws/triage` — notifica cuando se clasifica o da de alta a un paciente
+- `POST /api/auth/login` — inicia sesión del personal y devuelve un token JWT
+- `GET /api/auth/me` — datos del personal con la sesión actual 🔒
+- `POST /api/triage/assessments/{id}/discharge` 🔒 — da de alta al paciente (deja de estar activo y libera carga)
+- `GET /api/dashboard/metrics` 🔒 — métricas agregadas de los pacientes activos (sin alta)
+- `GET /api/dashboard/active-patients` 🔒 — lista de pacientes activos
+- `GET /api/dashboard/staff-workload` 🔒 — carga actual de cada profesional
+- `WS /ws/triage` 🔒 — notifica cuando se clasifica o da de alta a un paciente (el token se envía como primer mensaje)
+
+🔒 = requiere `Authorization: Bearer <token>` del personal.
 
 ## Variables de entorno (backend)
 

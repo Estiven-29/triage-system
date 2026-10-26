@@ -10,6 +10,7 @@ from ..schemas.schemas import DischargeResponse, TriageClassifyRequest, TriageCl
 from ..services.complexity import complexity_level, estimate_complexity_index
 from ..services.diagnosis_suggester import recommend_actions, suggest_preliminary_diagnoses
 from ..services.staff_assignment import pick_staff
+from .auth import require_staff
 from .websocket import manager
 
 router = APIRouter(prefix="/api/triage", tags=["Triage"])
@@ -102,7 +103,11 @@ def _discharge(assessment_id: int, db: Session) -> DischargeResponse:
     return DischargeResponse(id=assessment.id, discharged_at=assessment.discharged_at)
 
 
-@router.post("/assessments/{assessment_id}/discharge", response_model=DischargeResponse)
+@router.post(
+    "/assessments/{assessment_id}/discharge",
+    response_model=DischargeResponse,
+    dependencies=[Depends(require_staff)],
+)
 async def discharge_patient(assessment_id: int, db: Session = Depends(get_db)):
     """Registra el alta: el paciente deja de contar como activo y libera la
     carga del profesional asignado."""

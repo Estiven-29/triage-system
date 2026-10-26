@@ -22,6 +22,8 @@ services:
     environment:
       DATABASE_URL: postgresql://triage_user:triage_password@db:5432/triage_db
       ALLOWED_ORIGINS: http://localhost:3000
+      # Cambiala fuera de desarrollo (o definela en un archivo .env junto al compose).
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
     depends_on:
       db:
         condition: service_healthy

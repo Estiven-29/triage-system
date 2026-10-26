@@ -12,6 +12,28 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 SymptomName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
 
+# ---------- Autenticacion del personal ----------
+
+class LoginRequest(BaseModel):
+    employee_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)
+    ]
+    password: str = Field(min_length=1, max_length=200)
+
+
+class StaffInfo(BaseModel):
+    id: int
+    employee_id: str
+    full_name: str
+    role: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    staff: StaffInfo
+
+
 # ---------- Chatbot ----------
 
 class PatientIntakeData(BaseModel):

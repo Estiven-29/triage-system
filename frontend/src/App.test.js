@@ -14,3 +14,11 @@ test('patient intake requires first and last name before starting', () => {
   fireEvent.click(screen.getByRole('button', { name: /Iniciar Evaluación/i }));
   expect(screen.getByRole('alert')).toHaveTextContent('Nombre y apellido son obligatorios.');
 });
+
+test('dashboard asks staff to log in first', () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: /Dashboard Médico/i }));
+  expect(screen.getByRole('heading', { name: /Acceso del personal/i })).toBeInTheDocument();
+  expect(screen.getByLabelText(/Número de empleado/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Contraseña/i)).toBeInTheDocument();
+});

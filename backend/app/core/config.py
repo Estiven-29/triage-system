@@ -4,6 +4,8 @@ pydantic-settings valida los tipos al arrancar: un valor invalido (por
 ejemplo CHAT_SESSION_TTL_MINUTES=abc) falla con un error claro en lugar de
 propagarse en tiempo de ejecucion.
 """
+import logging
+import secrets
 from typing import Annotated
 
 from pydantic import Field, field_validator
@@ -24,6 +26,23 @@ class Settings(BaseSettings):
 
     # Minutos de inactividad tras los cuales una sesion de chatbot expira.
     CHAT_SESSION_TTL_MINUTES: int = Field(default=120, gt=0)
+
+    # Clave para firmar los JWT del personal. Si no se define se genera una
+    # aleatoria al arrancar: funciona, pero las sesiones se invalidan en cada
+    # reinicio y no sirve con varios workers. En produccion, definirla.
+    SECRET_KEY: str = Field(default="", validate_default=True)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=480, gt=0)
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _default_secret_key(cls, value: str) -> str:
+        if value:
+            return value
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY no definida: se usa una clave aleatoria temporal; "
+            "las sesiones del personal se perderan al reiniciar el backend."
+        )
+        return secrets.token_urlsafe(32)
 
     @field_validator("DATABASE_URL")
     @classmethod
