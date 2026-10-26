@@ -33,12 +33,6 @@ def test_critical_vitals_have_high_complexity():
     assert complexity_level(index) in {"Alta", "Muy Alta", "Critica"}
 
 
-def test_complexity_level_boundaries():
-    assert complexity_level(10) == "Baja"
-    assert complexity_level(11) == "Moderada"
-    assert complexity_level(41) == "Critica"
-
-
 @pytest.mark.parametrize(
     "index, level",
     [(0, "Baja"), (10, "Baja"), (11, "Moderada"), (20, "Moderada"), (30, "Alta"),

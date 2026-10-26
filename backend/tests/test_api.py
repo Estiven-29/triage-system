@@ -1,10 +1,14 @@
 import os
 
-# BD de tests nueva en cada ejecucion, para que los resultados no dependan
-# de datos de corridas anteriores.
-if os.path.exists("test_triage.db"):
-    os.remove("test_triage.db")
-os.environ["DATABASE_URL"] = "sqlite:///./test_triage.db"
+# Por defecto SQLite, nueva en cada ejecucion para que los resultados no
+# dependan de corridas anteriores. CI define TEST_DATABASE_URL para correr
+# los mismos tests contra una BD Postgres vacia.
+if "TEST_DATABASE_URL" in os.environ:
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+else:
+    if os.path.exists("test_triage.db"):
+        os.remove("test_triage.db")
+    os.environ["DATABASE_URL"] = "sqlite:///./test_triage.db"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

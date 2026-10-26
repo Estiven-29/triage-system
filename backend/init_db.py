@@ -2,8 +2,8 @@
 """
 Script para inicializar la base de datos con tablas y datos de prueba
 """
-import sys
 import os
+import sys
 
 # Evita UnicodeEncodeError con los emojis de este script en consolas Windows
 # cuya codepage por defecto no es UTF-8 (cp1252).
@@ -14,7 +14,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from app.db.database import engine, SessionLocal
+    from app.db.database import SessionLocal, engine
     from app.db.migrations import run_migrations
     from app.models.models import MedicalStaff
 except ImportError as e:
