@@ -67,10 +67,11 @@ const TriageDashboard = () => {
   useEffect(() => {
     refresh();
 
-    // Polling como respaldo cada 8s, mas un refresco inmediato cuando el
-    // WebSocket avisa que se clasifico un paciente nuevo.
-    const interval = setInterval(refresh, 8000);
-    // Cualquier evento (paciente nuevo o alta) cambia los datos del dashboard.
+    // El WebSocket refresca al instante (y se reconecta solo si se cae);
+    // el polling cada 30 s queda solo como red de seguridad.
+    const interval = setInterval(refresh, 30000);
+    // Cualquier evento (paciente nuevo, alta o reconexion) puede cambiar
+    // los datos del dashboard.
     const ws = connectWebSocket(() => refresh());
 
     return () => {

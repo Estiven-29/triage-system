@@ -170,29 +170,55 @@ export const getStaffWorkload = async () => {
 
 // ==================== WEBSOCKET ====================
 
+// Cierre 1008 = el servidor rechazó el token: reintentar no sirve.
+const WS_POLICY_VIOLATION = 1008;
+const WS_MAX_RETRY_DELAY_MS = 30000;
+
+// Abre el WebSocket y lo reconecta solo si se cae, esperando 1 s, 2 s,
+// 4 s... hasta 30 s entre intentos. Cada (re)conexión emite
+// { type: 'connected' } para que el llamador recargue datos que pudo
+// perderse mientras estaba desconectado. Devuelve { close } para detenerlo.
 export const connectWebSocket = (onMessage) => {
-  const ws = new WebSocket(WS_URL);
+  let ws = null;
+  let retryDelay = 1000;
+  let retryTimer = null;
+  let stopped = false;
 
-  ws.onopen = () => {
-    // El token va como primer mensaje y no en la URL, para que no quede
-    // registrado en los logs de acceso del servidor.
-    ws.send(getAuthToken() || '');
+  const open = () => {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => {
+      // El token va como primer mensaje y no en la URL, para que no quede
+      // registrado en los logs de acceso del servidor.
+      ws.send(getAuthToken() || '');
+      retryDelay = 1000;
+      onMessage({ type: 'connected' });
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        onMessage(JSON.parse(event.data));
+      } catch (error) {
+        console.error('Mensaje WebSocket inválido:', error);
+      }
+    };
+
+    ws.onclose = (event) => {
+      if (stopped || event.code === WS_POLICY_VIOLATION) return;
+      retryTimer = setTimeout(open, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, WS_MAX_RETRY_DELAY_MS);
+    };
   };
 
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
-  };
+  open();
 
-  ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
+  return {
+    close: () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      ws?.close();
+    },
   };
-
-  ws.onclose = () => {
-    console.log('WebSocket disconnected');
-  };
-
-  return ws;
 };
 
 export default api;

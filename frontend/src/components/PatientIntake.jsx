@@ -28,7 +28,8 @@ const PatientIntake = ({ onGoToDashboard }) => {
     first_name: '',
     last_name: '',
     date_of_birth: '',
-    gender: 'male',
+    // Mismo valor por defecto que el backend (PatientIntakeData.gender).
+    gender: 'other',
   });
 
   const [vitalSigns, setVitalSigns] = useState({
@@ -170,7 +171,7 @@ const PatientIntake = ({ onGoToDashboard }) => {
       first_name: '',
       last_name: '',
       date_of_birth: '',
-      gender: 'male'
+      gender: 'other'
     });
     setVitalSigns({
       heart_rate: '',
@@ -260,9 +261,9 @@ const PatientIntake = ({ onGoToDashboard }) => {
                 value={patientData.gender}
                 onChange={(e) => setPatientData({...patientData, gender: e.target.value})}
               >
+                <option value="other">Otro / No especificado</option>
                 <option value="male">Masculino</option>
                 <option value="female">Femenino</option>
-                <option value="other">Otro</option>
               </select>
             </div>
             <button
