@@ -130,6 +130,20 @@ python ../ml-training/evaluate_model.py     # evalúa con un conjunto nuevo (sem
 
 ## Pruebas
 
+Antes de cada commit o PR, corre todos los chequeos (lint y tests del
+backend, tests y build del frontend) con:
+
+```bash
+./check.sh            # todo
+./check.sh backend    # solo backend
+./check.sh frontend   # solo frontend
+```
+
+En Windows, ejecútalo desde Git Bash (incluido con Git para Windows), con el
+entorno virtual del backend activado. Es lo mismo que hace el workflow `.github/workflows/ci.yml`, que está
+configurado para correr solo de forma manual. El encabezado del script explica
+cómo probar también contra PostgreSQL con una base desechable.
+
 ```bash
 cd backend && .venv\Scripts\activate
 pytest -v

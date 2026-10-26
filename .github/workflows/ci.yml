@@ -1,9 +1,14 @@
 name: CI
 
+# Desactivado en automatico: GitHub Actions no esta disponible en esta cuenta.
+# Solo corre si se lanza a mano (pestana Actions -> CI -> "Run workflow").
+# Mientras tanto, ./check.sh corre los mismos chequeos en local. Para
+# reactivarlo en cada PR, agrega debajo de "on:":
+#   push:
+#     branches: [main]
+#   pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
